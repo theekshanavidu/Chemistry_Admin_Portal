@@ -15,7 +15,7 @@ import {
   deactivateClassForStudent,
   updateTuteTracking
 } from "../db/firestoreService";
-import { Html5QrcodeScanner } from "html5-qrcode";
+import { Html5Qrcode } from "html5-qrcode";
 
 export default function AdminDashboard({ onLogout }) {
   const [activeTab, setActiveTab] = useState("students");
@@ -110,47 +110,60 @@ export default function AdminDashboard({ onLogout }) {
     }
   }, [selectedClassId, classes]);
 
-  // QR Code Scanner effect
+  // QR Code Scanner effect using direct Html5Qrcode for instant camera open
   useEffect(() => {
-    let scanner = null;
+    let html5QrCode = null;
+    let isMounted = true;
+
     if (activeTab === "verification" && scannerActive) {
-      try {
-        scanner = new Html5QrcodeScanner(
-          "qr-reader-el",
-          { fps: 10, qrbox: { width: 250, height: 250 } },
-          false
-        );
-        scanner.render(
-          (decodedText) => {
-            const lines = decodedText.split("\n");
-            let foundId = "";
-            for (const line of lines) {
-              if (line.startsWith("ID:")) {
-                foundId = line.replace("ID:", "").trim();
-                break;
+      const qrReaderEl = document.getElementById("qr-reader-el");
+      if (qrReaderEl) {
+        try {
+          html5QrCode = new Html5Qrcode("qr-reader-el");
+          html5QrCode.start(
+            { facingMode: "environment" },
+            {
+              fps: 10,
+              qrbox: { width: 250, height: 250 }
+            },
+            (decodedText) => {
+              if (!isMounted) return;
+              const lines = decodedText.split("\n");
+              let foundId = "";
+              for (const line of lines) {
+                if (line.startsWith("ID:")) {
+                  foundId = line.replace("ID:", "").trim();
+                  break;
+                }
               }
+              if (!foundId && decodedText.includes("SK")) {
+                const match = decodedText.match(/SK\d+/);
+                if (match) foundId = match[0];
+              }
+              const searchId = foundId || decodedText.trim();
+              setVerificationSearchId(searchId);
+              handleSearchStudent(searchId);
+              setScannerActive(false);
+            },
+            (err) => {
+              // Ignore scan parsing error
             }
-            if (!foundId && decodedText.includes("SK")) {
-              const match = decodedText.match(/SK\d+/);
-              if (match) foundId = match[0];
-            }
-            const searchId = foundId || decodedText.trim();
-            setVerificationSearchId(searchId);
-            handleSearchStudent(searchId);
-            setScannerActive(false);
-          },
-          (err) => {
-            // Ignore scan error
-          }
-        );
-      } catch (err) {
-        console.error("Failed to initialize html5-qrcode scanner", err);
+          ).catch((err) => {
+            console.error("Unable to start scanning.", err);
+          });
+        } catch (err) {
+          console.error("Failed to initialize Html5Qrcode", err);
+        }
       }
     }
 
     return () => {
-      if (scanner) {
-        scanner.clear().catch(err => console.error("Failed to clear scanner", err));
+      isMounted = false;
+      if (html5QrCode) {
+        // Stop scanning on clean up
+        html5QrCode.stop().catch(err => {
+          // Ignore error if already stopped or failed to stop
+        });
       }
     };
   }, [activeTab, scannerActive]);
@@ -408,18 +421,18 @@ export default function AdminDashboard({ onLogout }) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 flex relative font-sans">
+    <div className="min-h-screen bg-slate-50 text-slate-750 flex relative font-sans">
       
       {/* ── Left Sidebar (Desktop) / Sliding Panel (Mobile) ── */}
-      <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-gray-900 border-r border-gray-800 text-white flex flex-col justify-between transition-transform duration-300 transform lg:translate-x-0 lg:static lg:h-screen ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+      <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-slate-200 text-slate-700 flex flex-col justify-between transition-transform duration-300 transform lg:translate-x-0 lg:static lg:h-screen ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
         
         {/* Brand/Logo */}
         <div>
-          <div className="h-16 flex items-center gap-3 px-6 border-b border-gray-800 bg-gray-950">
-            <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center shadow-md">
+          <div className="h-16 flex items-center gap-3 px-6 border-b border-slate-200 bg-slate-50/50">
+            <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center shadow-md shadow-purple-200">
               <span className="text-white font-black text-base">A</span>
             </div>
-            <span className="font-black text-sm tracking-widest text-purple-400">ADMIN CONTROL</span>
+            <span className="font-black text-sm tracking-widest text-slate-800">ADMIN CONTROL</span>
           </div>
 
           {/* Menu Items */}
@@ -427,8 +440,8 @@ export default function AdminDashboard({ onLogout }) {
             {/* Students Management */}
             <button
               onClick={() => handleTabSelect("students")}
-              className={`w-full py-3 px-4 font-bold text-xs rounded-xl flex items-center gap-3 transition-all ${
-                activeTab === "students" ? "bg-purple-600 text-white shadow-lg" : "text-gray-400 hover:bg-gray-800 hover:text-white"
+              className={`w-full py-3 px-4 font-bold text-xs rounded-xl flex items-center gap-3 transition-all cursor-pointer ${
+                activeTab === "students" ? "bg-purple-600 text-white shadow-lg shadow-purple-200" : "text-slate-650 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
               <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
@@ -438,8 +451,8 @@ export default function AdminDashboard({ onLogout }) {
             {/* Add & Manage Classes */}
             <button
               onClick={() => handleTabSelect("classes")}
-              className={`w-full py-3 px-4 font-bold text-xs rounded-xl flex items-center gap-3 transition-all ${
-                activeTab === "classes" ? "bg-purple-600 text-white shadow-lg" : "text-gray-400 hover:bg-gray-800 hover:text-white"
+              className={`w-full py-3 px-4 font-bold text-xs rounded-xl flex items-center gap-3 transition-all cursor-pointer ${
+                activeTab === "classes" ? "bg-purple-600 text-white shadow-lg shadow-purple-200" : "text-slate-650 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
               <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
@@ -449,8 +462,8 @@ export default function AdminDashboard({ onLogout }) {
             {/* Record Upload & Zoom Live */}
             <button
               onClick={() => handleTabSelect("recordings")}
-              className={`w-full py-3 px-4 font-bold text-xs rounded-xl flex items-center gap-3 transition-all ${
-                activeTab === "recordings" ? "bg-purple-600 text-white shadow-lg" : "text-gray-400 hover:bg-gray-800 hover:text-white"
+              className={`w-full py-3 px-4 font-bold text-xs rounded-xl flex items-center gap-3 transition-all cursor-pointer ${
+                activeTab === "recordings" ? "bg-purple-600 text-white shadow-lg shadow-purple-200" : "text-slate-650 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
               <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
@@ -460,8 +473,8 @@ export default function AdminDashboard({ onLogout }) {
             {/* Approve Slip Payments */}
             <button
               onClick={() => handleTabSelect("approvals")}
-              className={`w-full py-3 px-4 font-bold text-xs rounded-xl flex items-center justify-between transition-all ${
-                activeTab === "approvals" ? "bg-purple-600 text-white shadow-lg" : "text-gray-400 hover:bg-gray-800 hover:text-white"
+              className={`w-full py-3 px-4 font-bold text-xs rounded-xl flex items-center justify-between transition-all cursor-pointer ${
+                activeTab === "approvals" ? "bg-purple-600 text-white shadow-lg shadow-purple-200" : "text-slate-650 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
               <span className="flex items-center gap-3">
@@ -469,7 +482,7 @@ export default function AdminDashboard({ onLogout }) {
                 Approve Slip Payments
               </span>
               {pendingPaymentsCount > 0 && (
-                <span className="bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">
+                <span className="bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-sm shadow-red-200">
                   {pendingPaymentsCount}
                 </span>
               )}
@@ -478,8 +491,8 @@ export default function AdminDashboard({ onLogout }) {
             {/* Tute Delivery */}
             <button
               onClick={() => handleTabSelect("tutes")}
-              className={`w-full py-3 px-4 font-bold text-xs rounded-xl flex items-center justify-between transition-all ${
-                activeTab === "tutes" ? "bg-purple-600 text-white shadow-lg" : "text-gray-400 hover:bg-gray-800 hover:text-white"
+              className={`w-full py-3 px-4 font-bold text-xs rounded-xl flex items-center justify-between transition-all cursor-pointer ${
+                activeTab === "tutes" ? "bg-purple-600 text-white shadow-lg shadow-purple-200" : "text-slate-650 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
               <span className="flex items-center gap-3">
@@ -487,7 +500,7 @@ export default function AdminDashboard({ onLogout }) {
                 Tute Delivery
               </span>
               {pendingTutesCount > 0 && (
-                <span className="bg-amber-500 text-slate-950 text-[9px] font-black px-1.5 py-0.5 rounded-full">
+                <span className="bg-amber-500 text-slate-950 text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-sm shadow-amber-250">
                   {pendingTutesCount}
                 </span>
               )}
@@ -496,8 +509,8 @@ export default function AdminDashboard({ onLogout }) {
             {/* Physical Student Verification */}
             <button
               onClick={() => handleTabSelect("verification")}
-              className={`w-full py-3 px-4 font-bold text-xs rounded-xl flex items-center gap-3 transition-all ${
-                activeTab === "verification" ? "bg-purple-600 text-white shadow-lg" : "text-gray-400 hover:bg-gray-800 hover:text-white"
+              className={`w-full py-3 px-4 font-bold text-xs rounded-xl flex items-center gap-3 transition-all cursor-pointer ${
+                activeTab === "verification" ? "bg-purple-600 text-white shadow-lg shadow-purple-200" : "text-slate-650 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
               <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0a8 8 0 11-16 0 8 8 0 0116 0z" /></svg>
@@ -506,110 +519,136 @@ export default function AdminDashboard({ onLogout }) {
           </nav>
         </div>
 
-        {/* Admin Footer & Logout */}
-        <div className="p-4 border-t border-gray-800 bg-gray-950/50">
-          <div className="flex items-center gap-3 mb-4 px-2">
-            <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-900 flex items-center justify-center font-extrabold text-sm">
+        {/* Bottom Profile / Logout */}
+        <div className="p-4 border-t border-slate-200 bg-slate-50/50">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-600 font-extrabold flex items-center justify-center text-sm shadow-sm border border-purple-200">
               AD
             </div>
             <div className="truncate">
-              <p className="text-xs font-bold truncate">System Admin</p>
-              <p className="text-[10px] text-gray-500 truncate">skchem.com</p>
+              <p className="text-xs font-bold text-slate-850 truncate">System Admin</p>
+              <p className="text-[10px] text-slate-500 truncate">skchem.com</p>
             </div>
           </div>
           <button
             onClick={onLogout}
-            className="w-full bg-red-600 hover:bg-red-700 text-white font-extrabold py-2 px-4 rounded-xl text-xs transition-colors flex items-center justify-center gap-2 shadow cursor-pointer"
+            className="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-650 font-extrabold text-xs rounded-xl transition-all border border-red-200 shadow-sm flex items-center justify-center gap-2 cursor-pointer"
           >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
             Sign Out
           </button>
         </div>
       </aside>
 
-      {/* Backdrop (Mobile sidebar) */}
+      {/* Backdrop for Mobile Sidebar */}
       {sidebarOpen && (
-        <div
-          onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 bg-black/50 z-35 lg:hidden backdrop-blur-sm"
-        />
+        <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/45 backdrop-blur-sm z-30 lg:hidden" />
       )}
 
-      {/* ── Main Content Area ── */}
-      <div className="flex-1 flex flex-col min-h-screen overflow-hidden bg-gray-950">
+      {/* ── Right Content Area ── */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         
-        {/* Header */}
-        <header className="h-16 bg-gray-900 border-b border-gray-800 px-6 flex items-center justify-between sticky top-0 z-30 shadow-sm">
+        {/* Top Header */}
+        <header className="h-16 border-b border-slate-200 bg-white flex items-center justify-between px-6 sticky top-0 z-30 shadow-sm shadow-slate-100">
           <div className="flex items-center gap-3">
-            {/* Hamburger (Mobile) */}
             <button
               onClick={() => setSidebarOpen(true)}
-              className="p-1.5 hover:bg-gray-800 rounded-lg text-gray-400 lg:hidden transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 lg:hidden cursor-pointer"
             >
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 12h16M4 18h16" /></svg>
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
             </button>
-            <h1 className="font-extrabold text-sm md:text-base text-white tracking-tight flex items-center gap-2">
-              CM.ECHEM.LK — Admin Control Panel
-            </h1>
+            <h2 className="font-extrabold text-slate-850 text-base leading-none">SKCHEM.COM — Admin Control Panel</h2>
           </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={fetchData}
-              className="p-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl transition-colors border border-gray-700 flex items-center justify-center cursor-pointer"
-              title="Refresh Data"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-              </svg>
+          <div className="flex items-center gap-4">
+            <button onClick={fetchData} className="p-2 text-slate-500 hover:text-slate-700 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors border border-slate-200 shadow-sm cursor-pointer" title="Refresh Database">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89H18" /></svg>
             </button>
-            <span className="hidden md:inline text-[9px] text-purple-400 font-extrabold uppercase tracking-widest px-2.5 py-1 bg-purple-950/40 rounded-lg border border-purple-900/60">
-              Active Session
+            <span className="px-2.5 py-1 bg-green-50 text-green-700 border border-green-200 rounded-full font-bold text-[10px] tracking-wide shadow-sm flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-600 animate-ping" />
+              ACTIVE SESSION
             </span>
           </div>
         </header>
 
-        {/* Dashboard stats panel */}
-        <section className="p-6 pb-2 grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 shadow-sm">
-            <p className="text-[10px] text-gray-500 font-extrabold uppercase tracking-wider">Students</p>
-            <h4 className="text-xl font-black text-white mt-1">{loadingStudents ? "..." : activeStudentsCount}</h4>
-          </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 shadow-sm">
-            <p className="text-[10px] text-gray-500 font-extrabold uppercase tracking-wider">Pending Slips</p>
-            <h4 className="text-xl font-black text-red-500 mt-1">{loadingPayments ? "..." : pendingPaymentsCount}</h4>
-          </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 shadow-sm">
-            <p className="text-[10px] text-gray-500 font-extrabold uppercase tracking-wider">Classes</p>
-            <h4 className="text-xl font-black text-white mt-1">{loadingClasses ? "..." : totalClassesCount}</h4>
-          </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 shadow-sm">
-            <p className="text-[10px] text-gray-500 font-extrabold uppercase tracking-wider">Pending Tutes</p>
-            <h4 className="text-xl font-black text-amber-500 mt-1">{loadingPayments ? "..." : pendingTutesCount}</h4>
-          </div>
-        </section>
-
-        {/* Main Panel Content */}
-        <main className="p-6 flex-1 overflow-y-auto">
+        {/* Main View Container */}
+        <main className="p-6 md:p-8 space-y-8 flex-grow">
           
+          {/* Analytics Stats Grid */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+            {/* Total Students */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex items-center justify-between transition-all hover:shadow-md">
+              <div>
+                <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Students</p>
+                <p className="text-slate-900 text-2xl font-black mt-1">{activeStudentsCount}</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 border border-purple-100 flex items-center justify-center">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+              </div>
+            </div>
+
+            {/* Pending Slips */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex items-center justify-between transition-all hover:shadow-md">
+              <div>
+                <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Pending Slips</p>
+                <p className={`text-2xl font-black mt-1 ${pendingPaymentsCount > 0 ? "text-red-650" : "text-slate-900"}`}>
+                  {pendingPaymentsCount}
+                </p>
+              </div>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${
+                pendingPaymentsCount > 0 ? "bg-red-50 text-red-600 border-red-100" : "bg-slate-50 text-slate-400 border-slate-150"
+              }`}>
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+              </div>
+            </div>
+
+            {/* Total Classes */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex items-center justify-between transition-all hover:shadow-md">
+              <div>
+                <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Classes</p>
+                <p className="text-slate-900 text-2xl font-black mt-1">{totalClassesCount}</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 border border-purple-100 flex items-center justify-center">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+              </div>
+            </div>
+
+            {/* Pending Tutes */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex items-center justify-between transition-all hover:shadow-md">
+              <div>
+                <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Pending Tutes</p>
+                <p className={`text-2xl font-black mt-1 ${pendingTutesCount > 0 ? "text-amber-600 font-bold" : "text-slate-900"}`}>
+                  {pendingTutesCount}
+                </p>
+              </div>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${
+                pendingTutesCount > 0 ? "bg-amber-50 text-amber-600 border-amber-100" : "bg-slate-50 text-slate-400 border-slate-150"
+              }`}>
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-2m-4-1v8m0 0l3-3m-3 3L9 8m-5 5h2.586a1 1 0 01.707.293l2.414 2.414a1 1 0 00.707.293h3.172a1 1 0 00.707-.293l2.414-2.414a1 1 0 01.707-.293H20" /></svg>
+              </div>
+            </div>
+          </div>
+
           {/* ──────────────────────────────────────────────────────── */}
           {/* 1. STUDENTS MANAGEMENT TAB                               */}
           {/* ──────────────────────────────────────────────────────── */}
           {activeTab === "students" && (
-            <div className="space-y-6">
-              <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4">
-                <h2 className="text-lg font-extrabold text-white">Registered Students Directory</h2>
-                <div className="relative max-w-md w-full">
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+              
+              {/* Header and filter bar */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-base">Students Database Management</h3>
+                  <p className="text-slate-550 text-xs mt-0.5">පද්ධතියේ ලියාපදිංචි වී ඇති සමස්ත ශිෂ්‍ය තොරතුරු මෙතැනින් පාලනය කරන්න.</p>
+                </div>
+                <div className="w-full md:max-w-xs relative">
                   <input
                     type="text"
-                    placeholder="ID, Name, Mobile or School වලින් සොයන්න..."
+                    placeholder="Search by ID, name, batch, mobile..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-800 rounded-xl text-xs bg-gray-900 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:bg-white transition-all shadow-inner"
                   />
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                  </span>
+                  <svg className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                 </div>
               </div>
 
@@ -618,14 +657,14 @@ export default function AdminDashboard({ onLogout }) {
                   <div className="w-10 h-10 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
                 </div>
               ) : filteredStudents.length === 0 ? (
-                <div className="text-center py-12 text-gray-500 text-xs bg-gray-900 rounded-2xl border border-gray-800 p-8">
-                  ශිෂ්‍යයින් කිසිවෙකු සොයාගත නොහැකි විය.
+                <div className="text-center py-12 text-slate-400 text-xs bg-slate-50 border border-slate-150 rounded-2xl p-8">
+                  ලියාපදිංචි ශිෂ්‍යයින් කිසිවෙකු සොයාගත නොහැක!
                 </div>
               ) : (
-                <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden shadow-sm">
+                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs text-gray-300">
-                      <thead className="bg-gray-950 border-b border-gray-800 font-extrabold text-[10px] uppercase text-gray-500 tracking-wider">
+                    <table className="w-full text-left text-xs text-slate-750">
+                      <thead className="bg-slate-50 border-b border-slate-200 font-extrabold text-[10px] uppercase text-slate-500 tracking-wider">
                         <tr>
                           <th className="py-4 px-6">Student ID</th>
                           <th className="py-4 px-6">Name</th>
@@ -635,28 +674,28 @@ export default function AdminDashboard({ onLogout }) {
                           <th className="py-4 px-6 text-center">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-800 font-medium">
+                      <tbody className="divide-y divide-slate-100 font-medium">
                         {filteredStudents.map((s) => (
-                          <tr key={s.id} className="hover:bg-gray-850 transition-colors">
-                            <td className="py-4 px-6 font-bold text-purple-400 font-mono tracking-wider">{s.studentId || "N/A"}</td>
-                            <td className="py-4 px-6 font-semibold text-white">{s.firstName} {s.lastName}</td>
+                          <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="py-4 px-6 font-bold text-purple-650 font-mono tracking-wider">{s.studentId || "N/A"}</td>
+                            <td className="py-4 px-6 font-semibold text-slate-800">{s.firstName} {s.lastName}</td>
                             <td className="py-4 px-6">
-                              <span className="px-2.5 py-0.5 bg-gray-800 text-gray-300 text-[9px] font-bold rounded uppercase">
+                              <span className="px-2.5 py-0.5 bg-slate-100 text-slate-650 text-[9px] font-bold rounded uppercase border border-slate-200">
                                 {s.batch}
                               </span>
                             </td>
-                            <td className="py-4 px-6 text-gray-400 font-mono">{s.mobile}</td>
-                            <td className="py-4 px-6 text-gray-400">{s.homeCity}</td>
+                            <td className="py-4 px-6 text-slate-500 font-mono">{s.mobile}</td>
+                            <td className="py-4 px-6 text-slate-500">{s.homeCity}</td>
                             <td className="py-4 px-6 flex items-center justify-center gap-2">
                               <button
                                 onClick={() => setViewingStudent(s)}
-                                className="px-3 py-1.5 bg-purple-950/50 hover:bg-purple-900/60 border border-purple-800/40 text-purple-300 font-bold rounded-lg transition-colors cursor-pointer"
+                                className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-650 font-bold rounded-lg transition-colors cursor-pointer"
                               >
                                 Profile
                               </button>
                               <button
                                 onClick={() => handleDeleteStudent(s.id)}
-                                className="px-3 py-1.5 bg-red-950/50 hover:bg-red-900/60 border border-red-800/40 text-red-300 font-bold rounded-lg transition-colors cursor-pointer"
+                                className="px-3 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-650 font-bold rounded-lg transition-colors cursor-pointer"
                               >
                                 Delete
                               </button>
@@ -677,37 +716,37 @@ export default function AdminDashboard({ onLogout }) {
           {activeTab === "classes" && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {/* Class Creator Form */}
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-sm h-fit">
-                <h3 className="font-extrabold text-white text-base border-b border-gray-800 pb-3 mb-4">Add New Class Catalog</h3>
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm h-fit">
+                <h3 className="font-extrabold text-slate-850 text-base border-b border-slate-200 pb-3 mb-4">Add New Class Catalog</h3>
                 <form onSubmit={handleAddClassSubmit} className="space-y-4">
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Class Title</label>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Class Title</label>
                     <input
                       type="text"
                       placeholder="2026 Revision Only | June"
                       value={classForm.title}
                       onChange={(e) => setClassForm({ ...classForm, title: e.target.value })}
                       required
-                      className="w-full px-4 py-2 border border-gray-800 rounded-lg text-xs bg-gray-950 text-white focus:bg-gray-900"
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg text-xs bg-slate-50 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Price (LKR)</label>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Price (LKR)</label>
                     <input
                       type="number"
                       placeholder="3300"
                       value={classForm.price}
                       onChange={(e) => setClassForm({ ...classForm, price: e.target.value })}
                       required
-                      className="w-full px-4 py-2 border border-gray-800 rounded-lg text-xs bg-gray-950 text-white focus:bg-gray-900"
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg text-xs bg-slate-50 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Target Month</label>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Target Month</label>
                     <select
                       value={classForm.month}
                       onChange={(e) => setClassForm({ ...classForm, month: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-800 rounded-lg text-xs bg-gray-950 text-gray-300"
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg text-xs bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                     >
                       {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((m) => (
                         <option key={m} value={m}>{m}</option>
@@ -715,11 +754,11 @@ export default function AdminDashboard({ onLogout }) {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">AL Batch Compatibility</label>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">AL Batch Compatibility</label>
                     <select
                       value={classForm.batch}
                       onChange={(e) => setClassForm({ ...classForm, batch: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-800 rounded-lg text-xs bg-gray-950 text-gray-300"
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg text-xs bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                     >
                       <option value="2026AL">2026 A/L</option>
                       <option value="2027AL">2027 A/L</option>
@@ -728,63 +767,67 @@ export default function AdminDashboard({ onLogout }) {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Description (Optional)</label>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Description (Optional)</label>
                     <textarea
                       placeholder="Class objectives, details..."
                       value={classForm.description}
                       onChange={(e) => setClassForm({ ...classForm, description: e.target.value })}
                       rows={3}
-                      className="w-full px-4 py-2 border border-gray-800 rounded-lg text-xs bg-gray-950 text-white focus:bg-gray-900"
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg text-xs bg-slate-50 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                     />
                   </div>
                   <button
                     type="submit"
                     disabled={addingClassStatus === "adding"}
-                    className="w-full bg-purple-600 hover:bg-purple-700 text-white font-extrabold py-2.5 rounded-lg text-xs transition-colors shadow flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="w-full bg-purple-600 hover:bg-purple-700 text-white font-extrabold py-2.5 rounded-lg text-xs transition-colors shadow-lg shadow-purple-200 flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     {addingClassStatus === "adding" ? "Creating..." : "Add Class to Catalog"}
                   </button>
                   {addingClassStatus === "success" && (
-                    <p className="text-center text-green-500 text-xs font-bold mt-2">Class added successfully! 🎉</p>
+                    <p className="text-center text-green-600 text-xs font-bold mt-2">Class added successfully! 🎉</p>
                   )}
                 </form>
               </div>
 
-              {/* Existing Classes Catalog */}
-              <div className="lg:col-span-2 space-y-4">
-                <h3 className="font-extrabold text-white text-base border-b border-gray-800 pb-3">Active Classes List</h3>
+              {/* Class Catalog List */}
+              <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                <h3 className="font-extrabold text-slate-850 text-base border-b border-slate-200 pb-3 mb-4">Classes Package List ({classes.length})</h3>
+
                 {loadingClasses ? (
                   <div className="flex justify-center p-12">
                     <div className="w-10 h-10 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
                   </div>
                 ) : classes.length === 0 ? (
-                  <div className="text-center py-12 text-gray-500 text-xs bg-gray-900 rounded-2xl border border-gray-800 p-8">
-                    මෙතෙක් කිසිදු පන්තියක් ඇතුළත් කර නැත.
-                  </div>
+                  <p className="text-center py-12 text-slate-400 text-xs font-semibold">තවමත් කිසිදු පන්තියක් එකතු කර නැත.</p>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {classes.map((cls) => (
-                      <div key={cls.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-sm space-y-3 flex flex-col justify-between hover:border-gray-700 transition-all">
-                        <div className="space-y-1.5">
-                          <div className="flex justify-between items-start">
-                            <span className="px-2 py-0.5 bg-purple-950 text-purple-400 border border-purple-900/60 text-[9px] font-extrabold rounded uppercase tracking-wider">
+                      <div
+                        key={cls.id}
+                        className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col justify-between hover:shadow-md transition-all relative overflow-hidden"
+                      >
+                        <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-purple-500 to-indigo-500" />
+                        
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-start gap-3">
+                            <h4 className="font-extrabold text-slate-800 text-sm leading-snug">{cls.title}</h4>
+                            <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-[8px] font-black rounded border border-purple-200 uppercase flex-shrink-0">
                               {cls.batch}
                             </span>
-                            <span className="font-bold text-white text-xs">LKR {cls.price}</span>
                           </div>
-                          <h4 className="font-bold text-white text-sm">{cls.title}</h4>
-                          <p className="text-[10px] text-gray-500">Target Month: {cls.month}</p>
-                          <p className="text-[11px] text-gray-400 leading-relaxed line-clamp-3">
-                            {cls.description || "No description provided."}
-                          </p>
+                          <p className="text-slate-500 text-xs line-clamp-2 leading-relaxed">{cls.description || "විස්තර කිසිවක් නැත."}</p>
                         </div>
-                        <div className="border-t border-gray-850 pt-3 flex justify-end">
+
+                        <div className="mt-4 pt-3 border-t border-slate-200 flex items-center justify-between">
+                          <div>
+                            <span className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Price</span>
+                            <p className="text-purple-750 font-black text-sm leading-none mt-0.5">LKR {cls.price}</p>
+                          </div>
                           <button
                             onClick={() => handleDeleteClass(cls.id)}
-                            className="px-3 py-1.5 bg-red-950/30 hover:bg-red-900/40 text-red-400 border border-red-900/55 text-[10px] font-bold rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                            className="py-1 px-3 bg-red-50 hover:bg-red-100 border border-red-200 text-red-650 font-extrabold text-[10px] rounded-lg shadow-sm transition-colors cursor-pointer"
                           >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                            Delete Class
+                            Delete
                           </button>
                         </div>
                       </div>
@@ -796,141 +839,155 @@ export default function AdminDashboard({ onLogout }) {
           )}
 
           {/* ──────────────────────────────────────────────────────── */}
-          {/* 3. RECORD UPLOAD & ZOOM LIVE TAB                          */}
+          {/* 3. RECORDING UPLOAD & ZOOM TAB                           */}
           {/* ──────────────────────────────────────────────────────── */}
           {activeTab === "recordings" && (
-            <div className="space-y-6">
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-sm">
-                <h2 className="text-base font-extrabold text-white mb-4">🎥 Record Upload &amp; Zoom Live Manager</h2>
-                <div className="max-w-sm">
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5">Select Class to Manage</label>
-                  <select
-                    value={selectedClassId}
-                    onChange={(e) => setSelectedClassId(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-gray-800 rounded-xl text-xs bg-gray-950 text-white"
-                  >
-                    <option value="">-- Choose Class --</option>
-                    {classes.map(c => (
-                      <option key={c.id} value={c.id}>{c.title} ({c.batch})</option>
-                    ))}
-                  </select>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              
+              {/* Left Selector Column */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm h-fit space-y-4">
+                <div>
+                  <h3 className="font-extrabold text-slate-850 text-base">Select Class</h3>
+                  <p className="text-slate-500 text-[11px] mt-0.5">දේශන සහ Zoom සබැඳි එක් කිරීමට පන්තියක් තෝරන්න.</p>
+                </div>
+                
+                <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
+                  {classes.map((cls) => (
+                    <button
+                      key={cls.id}
+                      onClick={() => setSelectedClassId(cls.id)}
+                      className={`w-full text-left p-3.5 rounded-xl border text-xs font-bold transition-all cursor-pointer flex justify-between items-center ${
+                        selectedClassId === cls.id
+                          ? "bg-purple-600 text-white border-purple-700 shadow-md shadow-purple-200"
+                          : "bg-slate-50 border-slate-200 text-slate-750 hover:bg-slate-100"
+                      }`}
+                    >
+                      <span className="truncate pr-2">{cls.title}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                        selectedClassId === cls.id ? "bg-purple-700 text-purple-100" : "bg-slate-200 text-slate-650"
+                      }`}>
+                        {cls.month}
+                      </span>
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {classDetails ? (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  {/* Zoom Live Section */}
-                  <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-sm space-y-4">
-                    <div className="border-b border-gray-800 pb-3">
-                      <h3 className="font-extrabold text-white text-sm">Zoom Live Link Settings</h3>
-                      <p className="text-gray-500 text-[10px]">සජීවී දේශනයේ සබැඳි ශිෂ්‍යයාට මෙතැනින් එකතු කරන්න.</p>
-                    </div>
-
-                    <form onSubmit={handleUpdateZoom} className="space-y-4">
+              {/* Middle & Right Main Workspace */}
+              <div className="lg:col-span-2 space-y-6">
+                {classDetails ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    {/* Zoom Live link updater */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4 h-fit">
                       <div>
-                        <label className="block text-[10px] font-bold text-gray-450 uppercase mb-1">Zoom Live URL</label>
-                        <input
-                          type="url"
-                          placeholder="https://zoom.us/j/..."
-                          value={zoomForm.zoomLink}
-                          onChange={(e) => setZoomForm({ ...zoomForm, zoomLink: e.target.value })}
-                          className="w-full px-4 py-2 border border-gray-800 rounded-lg text-xs bg-gray-950 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        />
+                        <h4 className="font-extrabold text-slate-850 text-sm">Zoom Live Link</h4>
+                        <p className="text-slate-500 text-[10px] mt-0.5">මෙම පන්තියේ ඊළඟ සජීවී Zoom සබැඳිය මෙතැනින් යාවත්කාලීන කරන්න.</p>
                       </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-gray-450 uppercase mb-1">Live Notice / Caption</label>
-                        <input
-                          type="text"
-                          placeholder="Revision class starts at 8.00 AM today!"
-                          value={zoomForm.zoomCaption}
-                          onChange={(e) => setZoomForm({ ...zoomForm, zoomCaption: e.target.value })}
-                          className="w-full px-4 py-2 border border-gray-800 rounded-lg text-xs bg-gray-950 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        />
-                      </div>
-                      <button
-                        type="submit"
-                        disabled={updatingZoomStatus === "updating"}
-                        className="bg-purple-600 hover:bg-purple-700 text-white font-extrabold py-2 px-4 rounded-lg text-xs transition-colors cursor-pointer shadow-md"
-                      >
-                        {updatingZoomStatus === "updating" ? "Saving..." : "Save Zoom Live Settings"}
-                      </button>
-                      {updatingZoomStatus === "success" && (
-                        <p className="text-green-500 text-xs font-bold mt-2">Zoom Link Saved successfully! 💻</p>
-                      )}
-                    </form>
-                  </div>
 
-                  {/* Recorded Videos Section */}
-                  <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-sm space-y-6">
-                    <div className="border-b border-gray-800 pb-3">
-                      <h3 className="font-extrabold text-white text-sm">Recorded Video Lectures</h3>
-                      <p className="text-gray-500 text-[10px]">පටිගත කරන ලද වීඩියෝ දේශන මෙතැනින් එකතු/ඉවත් කරන්න.</p>
-                    </div>
-
-                    {/* Add Video Form */}
-                    <form onSubmit={handleAddVideo} className="bg-gray-950 border border-gray-850 p-4 rounded-xl space-y-3">
-                      <p className="font-bold text-gray-300 text-xs">Add New Video Lesson</p>
-                      <div>
-                        <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">Video Caption</label>
-                        <input
-                          type="text"
-                          placeholder="Lesson 1 - Organic Chemistry Intro"
-                          value={videoForm.caption}
-                          onChange={(e) => setVideoForm({ ...videoForm, caption: e.target.value })}
-                          required
-                          className="w-full px-3 py-1.5 border border-gray-800 rounded-lg text-xs bg-gray-900 text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">YouTube Video URL</label>
-                        <input
-                          type="url"
-                          placeholder="https://www.youtube.com/watch?v=..."
-                          value={videoForm.youtubeLink}
-                          onChange={(e) => setVideoForm({ ...videoForm, youtubeLink: e.target.value })}
-                          required
-                          className="w-full px-3 py-1.5 border border-gray-800 rounded-lg text-xs bg-gray-900 text-white"
-                        />
-                      </div>
-                      <button
-                        type="submit"
-                        className="bg-purple-600 hover:bg-purple-700 text-white font-extrabold py-1.5 px-3 rounded-lg text-xs transition-colors cursor-pointer"
-                      >
-                        Add Video
-                      </button>
-                    </form>
-
-                    {/* Existing Videos List */}
-                    <div className="space-y-2">
-                      <p className="font-bold text-gray-300 text-xs">Videos List ({classDetails.videos?.length || 0})</p>
-                      {(!classDetails.videos || classDetails.videos.length === 0) ? (
-                        <p className="text-gray-500 text-xs">මෙම පන්තියට තවමත් වීඩියෝ කිසිවක් එකතු කර නැත.</p>
-                      ) : (
-                        <div className="divide-y divide-gray-800 max-h-60 overflow-y-auto border border-gray-850 rounded-xl bg-gray-950">
-                          {classDetails.videos.map((vid, index) => (
-                            <div key={index} className="p-3 flex items-center justify-between gap-4 text-xs">
-                              <div className="truncate">
-                                <p className="font-bold text-white truncate">{vid.caption}</p>
-                                <p className="text-[10px] text-gray-550 font-mono truncate">{vid.youtubeLink}</p>
-                              </div>
-                              <button
-                                onClick={() => handleDeleteVideo(index)}
-                                className="text-red-400 hover:text-red-500 font-bold text-[11px] flex-shrink-0 cursor-pointer"
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          ))}
+                      <form onSubmit={handleUpdateZoom} className="space-y-3.5">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Zoom Invitation Link</label>
+                          <input
+                            type="url"
+                            placeholder="https://zoom.us/j/..."
+                            value={zoomForm.zoomLink}
+                            onChange={(e) => setZoomForm({ ...zoomForm, zoomLink: e.target.value })}
+                            required
+                            className="w-full px-4 py-2 border border-slate-200 rounded-lg text-xs bg-slate-50 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          />
                         </div>
-                      )}
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Zoom Caption / Date</label>
+                          <input
+                            type="text"
+                            placeholder="Tonight @ 8.30 PM"
+                            value={zoomForm.zoomCaption}
+                            onChange={(e) => setZoomForm({ ...zoomForm, zoomCaption: e.target.value })}
+                            required
+                            className="w-full px-4 py-2 border border-slate-200 rounded-lg text-xs bg-slate-50 text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          disabled={updatingZoomStatus === "updating"}
+                          className="w-full bg-purple-600 hover:bg-purple-700 text-white font-extrabold py-2 rounded-lg text-xs transition-colors shadow-md shadow-purple-200 cursor-pointer"
+                        >
+                          {updatingZoomStatus === "updating" ? "Saving Link..." : "Update Zoom Link"}
+                        </button>
+                        {updatingZoomStatus === "success" && (
+                          <p className="text-center text-green-600 text-[10px] font-bold mt-1">Zoom details updated! 🚀</p>
+                        )}
+                      </form>
+                    </div>
+
+                    {/* Recordings videos manager */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
+                      <div>
+                        <h4 className="font-extrabold text-slate-850 text-sm">Lecture Recordings</h4>
+                        <p className="text-slate-500 text-[10px] mt-0.5">පටිගත කළ දේශන වීඩියෝ මෙම පන්තියට එකතු කරන්න.</p>
+                      </div>
+
+                      <form onSubmit={handleAddVideo} className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3">
+                        <p className="font-bold text-slate-700 text-xs">Add New Video</p>
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            placeholder="Video Title (e.g. Session 01 — Organic)"
+                            value={videoForm.caption}
+                            onChange={(e) => setVideoForm({ ...videoForm, caption: e.target.value })}
+                            required
+                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          />
+                          <input
+                            type="text"
+                            placeholder="YouTube Video URL / Share Link"
+                            value={videoForm.youtubeLink}
+                            onChange={(e) => setVideoForm({ ...videoForm, youtubeLink: e.target.value })}
+                            required
+                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          className="w-full bg-purple-650 hover:bg-purple-750 text-white font-extrabold py-2 rounded-lg text-xs transition-colors shadow-sm cursor-pointer"
+                        >
+                          Add Video
+                        </button>
+                      </form>
+
+                      {/* Existing Videos List */}
+                      <div className="space-y-2">
+                        <p className="font-bold text-slate-650 text-xs">Videos List ({classDetails.videos?.length || 0})</p>
+                        {(!classDetails.videos || classDetails.videos.length === 0) ? (
+                          <p className="text-slate-400 text-xs">මෙම පන්තියට තවමත් වීඩියෝ කිසිවක් එකතු කර නැත.</p>
+                        ) : (
+                          <div className="divide-y divide-slate-100 max-h-60 overflow-y-auto border border-slate-200 rounded-xl bg-slate-50">
+                            {classDetails.videos.map((vid, index) => (
+                              <div key={index} className="p-3 flex items-center justify-between gap-4 text-xs">
+                                <div className="truncate">
+                                  <p className="font-bold text-slate-800 truncate">{vid.caption}</p>
+                                  <p className="text-[10px] text-slate-500 font-mono truncate">{vid.youtubeLink}</p>
+                                </div>
+                                <button
+                                  onClick={() => handleDeleteVideo(index)}
+                                  className="text-red-600 hover:text-red-750 font-bold text-[11px] flex-shrink-0 cursor-pointer"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 text-center text-gray-500 text-xs">
-                  කරුණාකර ඉහතින් පන්තියක් තෝරාගන්න.
-                </div>
-              )}
+                ) : (
+                  <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-slate-450 text-xs">
+                    කරුණාකර වම් පසින් පන්තියක් තෝරාගන්න.
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -939,32 +996,32 @@ export default function AdminDashboard({ onLogout }) {
           {/* ──────────────────────────────────────────────────────── */}
           {activeTab === "approvals" && (
             <div className="space-y-6">
-              <h2 className="text-lg font-extrabold text-white">Pending Slip Payments Approval</h2>
+              <h2 className="text-lg font-extrabold text-slate-900">Pending Slip Payments Approval</h2>
 
               {loadingPayments ? (
                 <div className="flex justify-center p-12">
                   <div className="w-10 h-10 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
                 </div>
               ) : pendingPayments.length === 0 ? (
-                <div className="text-center py-12 text-gray-500 text-xs bg-gray-900 rounded-2xl border border-gray-800 p-8">
+                <div className="text-center py-12 text-slate-450 text-xs bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
                   අනුමත කිරීමට බලාපොරොත්තුවෙන් පවතින ගෙවීම් රිසිට්පත් කිසිවක් නැත!
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {pendingPayments.map((pay) => (
-                    <div key={pay.id} className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between hover:border-gray-700 transition-all">
+                    <div key={pay.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between hover:border-slate-300 transition-all hover:shadow-md">
                       <div>
                         {/* Slip preview */}
                         <div
                           onClick={() => setZoomedSlip(pay.slipImage)}
-                          className="h-44 bg-gray-950 flex items-center justify-center overflow-hidden cursor-zoom-in relative border-b border-gray-850"
+                          className="h-44 bg-slate-100 flex items-center justify-center overflow-hidden cursor-zoom-in relative border-b border-slate-200"
                         >
                           <img
                             src={pay.slipImage}
                             alt="Slip"
                             className="h-full w-full object-contain hover:scale-105 transition-transform"
                           />
-                          <span className="absolute bottom-3 right-3 bg-black/60 text-white text-[9px] font-bold py-1 px-2 rounded-full backdrop-blur-sm">
+                          <span className="absolute bottom-3 right-3 bg-black/60 text-white text-[9px] font-bold py-1 px-2 rounded-full backdrop-blur-sm shadow">
                             🔍 Click to zoom
                           </span>
                         </div>
@@ -972,24 +1029,24 @@ export default function AdminDashboard({ onLogout }) {
                         {/* Payment Details */}
                         <div className="p-4 space-y-3">
                           <div>
-                            <p className="text-[9px] font-bold text-purple-400 uppercase tracking-widest font-mono">
+                            <p className="text-[9px] font-bold text-purple-650 uppercase tracking-widest font-mono">
                               ID: {pay.studentId}
                             </p>
-                            <h4 className="font-extrabold text-white text-sm mt-0.5">{pay.studentName}</h4>
+                            <h4 className="font-extrabold text-slate-800 text-sm mt-0.5">{pay.studentName}</h4>
                           </div>
 
-                          <div className="bg-gray-950 border border-gray-850 rounded-xl p-3 text-[11px] space-y-1.5">
+                          <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-[11px] space-y-1.5 shadow-inner">
                             <div className="flex justify-between">
-                              <span className="text-gray-500">Class:</span>
-                              <span className="font-bold text-gray-300">{pay.classTitle}</span>
+                              <span className="text-slate-500">Class:</span>
+                              <span className="font-bold text-slate-750">{pay.classTitle}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-gray-500">Amount:</span>
-                              <span className="font-bold text-gray-300">LKR {pay.price}</span>
+                              <span className="text-slate-500">Amount:</span>
+                              <span className="font-bold text-slate-750">LKR {pay.price}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-gray-500">Date:</span>
-                              <span className="text-gray-400 font-mono">
+                              <span className="text-slate-500">Date:</span>
+                              <span className="text-slate-650 font-mono">
                                 {pay.submittedAt ? new Date(pay.submittedAt).toLocaleString() : "N/A"}
                               </span>
                             </div>
@@ -1001,13 +1058,13 @@ export default function AdminDashboard({ onLogout }) {
                       <div className="p-4 pt-0 flex gap-2">
                         <button
                           onClick={() => handleRejectPayment(pay.id)}
-                          className="flex-1 py-1.5 px-3 bg-red-950/20 hover:bg-red-900/30 text-red-400 font-extrabold text-xs rounded-lg transition-colors border border-red-900/50 cursor-pointer"
+                          className="flex-1 py-1.5 px-3 bg-red-50 hover:bg-red-100 text-red-650 font-extrabold text-xs rounded-lg transition-colors border border-red-200 cursor-pointer shadow-sm"
                         >
                           Reject
                         </button>
                         <button
                           onClick={() => handleApprovePayment(pay.id)}
-                          className="flex-1 py-1.5 px-3 bg-green-600 hover:bg-green-700 text-white font-extrabold text-xs rounded-lg shadow transition-colors cursor-pointer"
+                          className="flex-1 py-1.5 px-3 bg-green-600 hover:bg-green-700 text-white font-extrabold text-xs rounded-lg shadow-md shadow-green-200 transition-colors cursor-pointer"
                         >
                           Approve
                         </button>
@@ -1024,21 +1081,21 @@ export default function AdminDashboard({ onLogout }) {
           {/* ──────────────────────────────────────────────────────── */}
           {activeTab === "tutes" && (
             <div className="space-y-6">
-              <h2 className="text-lg font-extrabold text-white">Tute Delivery Tracking System</h2>
+              <h2 className="text-lg font-extrabold text-slate-900">Tute Delivery Tracking System</h2>
 
               {loadingPayments ? (
                 <div className="flex justify-center p-12">
                   <div className="w-10 h-10 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
                 </div>
               ) : tuteDeliveries.length === 0 ? (
-                <div className="text-center py-12 text-gray-500 text-xs bg-gray-900 rounded-2xl border border-gray-800 p-8">
+                <div className="text-center py-12 text-slate-450 text-xs bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
                   නිබන්ධන තැපැල් කිරීමේ ඉල්ලීම් කිසිවක් දැනට නොමැත.
                 </div>
               ) : (
-                <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden shadow-sm">
+                <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs text-gray-300">
-                      <thead className="bg-gray-950 border-b border-gray-850 font-extrabold text-[10px] uppercase text-gray-500 tracking-wider">
+                    <table className="w-full text-left text-xs text-slate-750">
+                      <thead className="bg-slate-50 border-b border-slate-200 font-extrabold text-[10px] uppercase text-slate-500 tracking-wider">
                         <tr>
                           <th className="py-4 px-6">Student</th>
                           <th className="py-4 px-6">Tute / Class</th>
@@ -1048,19 +1105,19 @@ export default function AdminDashboard({ onLogout }) {
                           <th className="py-4 px-6 text-center">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-800 font-medium">
+                      <tbody className="divide-y divide-slate-100 font-medium">
                         {tuteDeliveries.map((delivery) => (
-                          <tr key={delivery.id} className="hover:bg-gray-850 transition-colors">
+                          <tr key={delivery.id} className="hover:bg-slate-50/50 transition-colors">
                             <td className="py-4 px-6">
-                              <p className="font-bold text-white">{delivery.studentName}</p>
-                              <p className="text-[10px] text-gray-500 font-mono">ID: {delivery.studentId}</p>
-                              <p className="text-[10px] text-gray-500 font-mono">Tel: {delivery.deliveryPhone || "N/A"}</p>
+                              <p className="font-bold text-slate-850">{delivery.studentName}</p>
+                              <p className="text-[10px] text-slate-500 font-mono">ID: {delivery.studentId}</p>
+                              <p className="text-[10px] text-slate-500 font-mono">Tel: {delivery.deliveryPhone || "N/A"}</p>
                             </td>
                             <td className="py-4 px-6">
-                              <p className="font-bold text-gray-300">{delivery.classTitle}</p>
+                              <p className="font-bold text-slate-700">{delivery.classTitle}</p>
                             </td>
                             <td className="py-4 px-6">
-                              <p className="max-w-xs break-words text-gray-400 font-medium">{delivery.deliveryAddress || "N/A"}</p>
+                              <p className="max-w-xs break-words text-slate-600 font-medium">{delivery.deliveryAddress || "N/A"}</p>
                             </td>
                             <td className="py-4 px-6 space-y-1">
                               {editingTuteId === delivery.id ? (
@@ -1070,14 +1127,14 @@ export default function AdminDashboard({ onLogout }) {
                                     placeholder="Tracking ID"
                                     value={tuteForm.trackingId}
                                     onChange={(e) => setTuteForm({ ...tuteForm, trackingId: e.target.value })}
-                                    className="px-2 py-1 border border-gray-800 bg-gray-950 text-white rounded w-full text-[11px]"
+                                    className="px-2.5 py-1.5 border border-slate-200 bg-white text-slate-800 rounded-lg w-full text-[11px] focus:outline-none focus:ring-1 focus:ring-purple-500"
                                   />
                                   <input
                                     type="url"
                                     placeholder="Courier URL"
                                     value={tuteForm.courierLink}
                                     onChange={(e) => setTuteForm({ ...tuteForm, courierLink: e.target.value })}
-                                    className="px-2 py-1 border border-gray-800 bg-gray-950 text-white rounded w-full text-[11px]"
+                                    className="px-2.5 py-1.5 border border-slate-200 bg-white text-slate-800 rounded-lg w-full text-[11px] focus:outline-none focus:ring-1 focus:ring-purple-500"
                                   />
                                   <div className="flex gap-2">
                                     <button
@@ -1088,7 +1145,7 @@ export default function AdminDashboard({ onLogout }) {
                                     </button>
                                     <button
                                       onClick={() => setEditingTuteId(null)}
-                                      className="px-2.5 py-1 bg-gray-800 text-gray-400 font-bold rounded text-[10px] cursor-pointer"
+                                      className="px-2.5 py-1 bg-slate-100 text-slate-500 font-bold rounded text-[10px] cursor-pointer border border-slate-200"
                                     >
                                       Cancel
                                     </button>
@@ -1098,7 +1155,7 @@ export default function AdminDashboard({ onLogout }) {
                                 <>
                                   <p>
                                     ID:{" "}
-                                    <span className="font-bold text-purple-400 font-mono">
+                                    <span className="font-bold text-purple-650 font-mono">
                                       {delivery.trackingId || "None"}
                                     </span>
                                   </p>
@@ -1107,7 +1164,7 @@ export default function AdminDashboard({ onLogout }) {
                                       href={delivery.courierLink}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="text-blue-400 hover:underline text-[10px] block"
+                                      className="text-blue-600 hover:underline text-[10px] block"
                                     >
                                       Link to Courier
                                     </a>
@@ -1120,7 +1177,7 @@ export default function AdminDashboard({ onLogout }) {
                                         courierLink: delivery.courierLink || ""
                                       });
                                     }}
-                                    className="text-[10px] text-purple-400 hover:text-purple-300 font-bold cursor-pointer"
+                                    className="text-[10px] text-purple-650 hover:text-purple-800 font-bold cursor-pointer bg-transparent border-0"
                                   >
                                     Edit Details
                                   </button>
@@ -1129,33 +1186,33 @@ export default function AdminDashboard({ onLogout }) {
                             </td>
                             <td className="py-4 px-6">
                               {delivery.deliveryStatus === "Delivered" ? (
-                                <span className="px-2 py-0.5 bg-green-950/60 text-green-400 border border-green-900/40 rounded-full font-bold text-[9px] uppercase">
+                                <span className="px-2.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-full font-bold text-[9px] uppercase shadow-sm">
                                   Delivered
                                 </span>
                               ) : delivery.deliveryStatus === "Shipped" ? (
-                                <span className="px-2 py-0.5 bg-blue-950/60 text-blue-400 border border-blue-900/40 rounded-full font-bold text-[9px] uppercase">
+                                <span className="px-2.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full font-bold text-[9px] uppercase shadow-sm">
                                   Shipped
                                 </span>
                               ) : (
-                                <span className="px-2 py-0.5 bg-amber-950/60 text-amber-400 border border-amber-900/40 rounded-full font-bold text-[9px] uppercase">
+                                <span className="px-2.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full font-bold text-[9px] uppercase shadow-sm">
                                   Pending
                                 </span>
                               )}
                               {delivery.studentConfirmed && (
-                                <p className="text-[10px] text-green-400 font-extrabold mt-1">✓ Received By Student</p>
+                                <p className="text-[10px] text-green-600 font-extrabold mt-1">✓ Received By Student</p>
                               )}
                             </td>
                             <td className="py-4 px-6 text-center space-y-1.5">
                               <button
                                 onClick={() => handleTuteStatusChange(delivery.id, "Shipped")}
-                                className="px-2 py-1 bg-blue-950/30 hover:bg-blue-900/40 text-blue-400 rounded border border-blue-900/50 text-[10px] font-bold w-24 cursor-pointer"
+                                className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded border border-blue-200 text-[10px] font-bold w-24 cursor-pointer shadow-sm"
                               >
                                 Shipped
                               </button>
                               <br />
                               <button
                                 onClick={() => handleTuteStatusChange(delivery.id, "Delivered")}
-                                className="px-2 py-1 bg-green-950/30 hover:bg-green-900/40 text-green-400 rounded border border-green-900/50 text-[10px] font-bold w-24 cursor-pointer"
+                                className="px-2.5 py-1 bg-green-50 hover:bg-green-100 text-green-700 rounded border border-green-200 text-[10px] font-bold w-24 cursor-pointer shadow-sm"
                               >
                                 Delivered
                               </button>
@@ -1175,34 +1232,39 @@ export default function AdminDashboard({ onLogout }) {
           {/* ──────────────────────────────────────────────────────── */}
           {activeTab === "verification" && (
             <div className="space-y-6">
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-sm space-y-4">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
                 <div>
-                  <h2 className="text-base font-extrabold text-white">Physical Student Verification</h2>
-                  <p className="text-gray-500 text-xs">QR කේතය ස්කෑන් කිරීමෙන් හෝ ශිෂ්‍ය හැඳුනුම්පත (Student ID) ඇතුළත් කිරීමෙන් ශිෂ්‍යයා සොයා පන්ති සක්‍රීය කරන්න.</p>
+                  <h2 className="text-base font-extrabold text-slate-900">Physical Student Verification</h2>
+                  <p className="text-slate-500 text-xs">QR කේතය ස්කෑන් කිරීමෙන් හෝ ශිෂ්‍ය හැඳුනුම්පත (Student ID) ඇතුළත් කිරීමෙන් ශිෂ්‍යයා සොයා පන්ති සක්‍රීය කරන්න.</p>
                 </div>
 
                 <div className="flex flex-col md:flex-row gap-4 items-end">
                   <div className="flex-1 max-w-sm">
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Enter Student ID</label>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Enter Student ID</label>
                     <input
                       type="text"
                       placeholder="e.g. SK123456"
                       value={verificationSearchId}
                       onChange={(e) => setVerificationSearchId(e.target.value.toUpperCase())}
-                      className="w-full px-4 py-2 border border-gray-800 rounded-xl text-xs bg-gray-950 text-white"
+                      className="w-full px-4 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:bg-white transition-all shadow-inner"
                     />
                   </div>
                   <button
                     onClick={() => handleSearchStudent()}
                     disabled={searchingStudent || !verificationSearchId}
-                    className="bg-purple-600 hover:bg-purple-700 text-white font-extrabold py-2 px-4 rounded-xl text-xs transition-colors shadow cursor-pointer"
+                    className="bg-purple-600 hover:bg-purple-700 text-white font-extrabold py-2.5 px-4 rounded-xl text-xs transition-colors shadow-md shadow-purple-200 cursor-pointer disabled:opacity-50"
                   >
                     {searchingStudent ? "Searching..." : "Search Student"}
                   </button>
                   <button
-                    onClick={() => setScannerActive(!scannerActive)}
-                    className={`font-extrabold py-2 px-4 rounded-xl text-xs transition-colors shadow flex items-center gap-1.5 cursor-pointer ${
-                      scannerActive ? "bg-red-600 text-white" : "bg-gray-800 text-gray-300 hover:bg-gray-700"
+                    onClick={() => {
+                      setScannerActive(!scannerActive);
+                      setVerifiedStudent(null);
+                    }}
+                    className={`font-extrabold py-2.5 px-4 rounded-xl text-xs transition-all shadow-md flex items-center gap-1.5 cursor-pointer ${
+                      scannerActive 
+                        ? "bg-red-650 hover:bg-red-700 text-white shadow-red-200" 
+                        : "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-250 shadow-slate-100"
                     }`}
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0a8 8 0 11-16 0 8 8 0 0116 0z" /></svg>
@@ -1210,11 +1272,11 @@ export default function AdminDashboard({ onLogout }) {
                   </button>
                 </div>
 
-                {/* QR Reader Element */}
+                {/* QR Reader Element - Direct camera access without ugly buttons */}
                 {scannerActive && (
-                  <div className="max-w-md mx-auto border border-gray-800 rounded-2xl overflow-hidden p-4 bg-gray-950 shadow-lg space-y-2">
-                    <p className="text-center font-bold text-red-500 text-[10px] animate-pulse">📷 CAMERA SCANNING ACTIVE</p>
-                    <div id="qr-reader-el" className="bg-white rounded-xl overflow-hidden" />
+                  <div className="max-w-md mx-auto border border-slate-200 rounded-2xl overflow-hidden p-4 bg-slate-50 shadow-md space-y-3">
+                    <p className="text-center font-bold text-red-650 text-[10px] animate-pulse tracking-widest">📷 CAMERA SCANNING ACTIVE</p>
+                    <div id="qr-reader-el" className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-inner" />
                   </div>
                 )}
               </div>
@@ -1223,56 +1285,56 @@ export default function AdminDashboard({ onLogout }) {
               {verifiedStudent && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   {/* Student Details Card */}
-                  <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-sm h-fit space-y-4">
-                    <div className="border-b border-gray-800 pb-3 flex items-center gap-3">
+                  <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm h-fit space-y-4">
+                    <div className="border-b border-slate-200 pb-3 flex items-center gap-3">
                       {verifiedStudent.profileImage ? (
                         <img
                           src={verifiedStudent.profileImage}
                           alt="Profile"
-                          className="w-14 h-14 rounded-full object-cover border border-gray-850"
+                          className="w-14 h-14 rounded-full object-cover border border-slate-200"
                         />
                       ) : (
-                        <div className="w-14 h-14 rounded-full bg-purple-950 border border-purple-800 text-purple-400 font-extrabold flex items-center justify-center text-lg">
+                        <div className="w-14 h-14 rounded-full bg-purple-50 border border-purple-200 text-purple-650 font-extrabold flex items-center justify-center text-lg shadow-sm">
                           {verifiedStudent.firstName?.[0]}{verifiedStudent.lastName?.[0]}
                         </div>
                       )}
                       <div>
-                        <h4 className="font-extrabold text-white text-sm">
+                        <h4 className="font-extrabold text-slate-800 text-sm">
                           {verifiedStudent.firstName} {verifiedStudent.lastName}
                         </h4>
-                        <p className="text-[10px] text-gray-500">{verifiedStudent.email}</p>
+                        <p className="text-[10px] text-slate-500">{verifiedStudent.email}</p>
                       </div>
                     </div>
 
                     <div className="space-y-2 text-xs">
-                      <div className="flex justify-between border-b border-gray-850 pb-1.5">
-                        <span className="text-gray-500">Student ID:</span>
-                        <span className="font-bold text-purple-400 font-mono tracking-wider">
+                      <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                        <span className="text-slate-400">Student ID:</span>
+                        <span className="font-bold text-purple-650 font-mono tracking-wider">
                           {verifiedStudent.studentId || "N/A"}
                         </span>
                       </div>
-                      <div className="flex justify-between border-b border-gray-855 pb-1.5">
-                        <span className="text-gray-500">Batch:</span>
-                        <span className="font-bold text-gray-300">{verifiedStudent.batch || "N/A"}</span>
+                      <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                        <span className="text-slate-400">Batch:</span>
+                        <span className="font-bold text-slate-700">{verifiedStudent.batch || "N/A"}</span>
                       </div>
-                      <div className="flex justify-between border-b border-gray-855 pb-1.5">
-                        <span className="text-gray-500">Mobile:</span>
-                        <span className="font-bold text-gray-350 font-mono">{verifiedStudent.mobile || "N/A"}</span>
+                      <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                        <span className="text-slate-400">Mobile:</span>
+                        <span className="font-bold text-slate-700 font-mono">{verifiedStudent.mobile || "N/A"}</span>
                       </div>
-                      <div className="flex justify-between border-b border-gray-855 pb-1.5">
-                        <span className="text-gray-500">NIC:</span>
-                        <span className="font-bold text-gray-350 font-mono">{verifiedStudent.nic || "N/A"}</span>
+                      <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                        <span className="text-slate-400">NIC:</span>
+                        <span className="font-bold text-slate-700 font-mono">{verifiedStudent.nic || "N/A"}</span>
                       </div>
-                      <div className="flex justify-between border-b border-gray-855 pb-1.5">
-                        <span className="text-gray-500">Home City:</span>
-                        <span className="font-bold text-gray-350">{verifiedStudent.homeCity || "N/A"}</span>
+                      <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                        <span className="text-slate-400">Home City:</span>
+                        <span className="font-bold text-slate-700">{verifiedStudent.homeCity || "N/A"}</span>
                       </div>
                     </div>
                   </div>
 
                   {/* Classes Activator Card */}
-                  <div className="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-2xl p-6 shadow-sm space-y-4">
-                    <h3 className="font-extrabold text-white text-base border-b border-gray-800 pb-3">Activate Class Packages for Student</h3>
+                  <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+                    <h3 className="font-extrabold text-slate-850 text-base border-b border-slate-200 pb-3">Activate Class Packages for Student</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {classes.map(c => {
                         const isCurrentlyActive = studentActiveClasses.includes(c.id);
@@ -1280,19 +1342,19 @@ export default function AdminDashboard({ onLogout }) {
                           <div
                             key={c.id}
                             className={`p-4 border rounded-xl flex items-center justify-between gap-4 transition-all ${
-                              isCurrentlyActive ? "bg-green-950/20 border-green-900/50" : "bg-gray-950 border-gray-850 hover:bg-gray-900"
+                              isCurrentlyActive ? "bg-green-50/50 border-green-200" : "bg-slate-50 border-slate-200 hover:bg-slate-100/55"
                             }`}
                           >
                             <div>
-                              <p className="font-bold text-white text-xs">{c.title}</p>
-                              <p className="text-[10px] text-gray-500 mt-0.5">Month: {c.month} | Price: LKR {c.price}</p>
+                              <p className="font-bold text-slate-850 text-xs">{c.title}</p>
+                              <p className="text-[10px] text-slate-500 mt-0.5">Month: {c.month} | Price: LKR {c.price}</p>
                             </div>
                             <button
                               onClick={() => handleTogglePhysicalClass(c, isCurrentlyActive)}
                               className={`px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-sm transition-all cursor-pointer ${
                                 isCurrentlyActive
-                                  ? "bg-red-950/50 border border-red-800/40 text-red-400 hover:bg-red-900/40"
-                                  : "bg-green-600 hover:bg-green-700 text-white"
+                                  ? "bg-red-50 hover:bg-red-100 border border-red-200 text-red-650"
+                                  : "bg-green-600 hover:bg-green-700 text-white shadow-md shadow-green-100"
                               }`}
                             >
                               {isCurrentlyActive ? "Deactivate" : "Activate"}
@@ -1309,94 +1371,94 @@ export default function AdminDashboard({ onLogout }) {
         </main>
 
         {/* Footer */}
-        <footer className="border-t border-gray-800 bg-gray-900 px-6 py-4 text-center">
-          <p className="text-xs font-bold text-gray-500 tracking-wide font-sans">
-            SKCHEM.COM - Sujith K Kumara
+        <footer className="border-t border-slate-200 bg-white px-6 py-4 text-center">
+          <p className="text-xs font-bold text-slate-500 tracking-wide font-sans">
+            SKCHEM.COM - Sajith K Kumara
           </p>
-          <p className="text-[10px] text-gray-600 mt-0.5 font-medium font-sans">
-            Copyright &copy; Theekshana Viduranga <span className="font-mono">&lt;/&gt;</span>
+          <p className="text-[10px] text-slate-450 mt-0.5 font-medium font-sans">
+            Copyright &copy; Theekshana Viduranga <span className="font-mono text-purple-600 font-bold">&lt;/&gt;</span>
           </p>
         </footer>
       </div>
 
       {/* ── STUDENT PROFILE VIEWER MODAL ── */}
       {viewingStudent && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-gray-800 text-gray-100 rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden relative font-sans">
-            <div className="bg-gray-950 text-white p-6 flex justify-between items-center border-b border-gray-850">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 text-slate-800 rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden relative font-sans">
+            <div className="bg-slate-50 text-slate-850 p-6 flex justify-between items-center border-b border-slate-200">
               <div>
                 <h3 className="text-base font-extrabold">Detailed Student Profile</h3>
-                <p className="text-purple-400 text-[10px] mt-0.5 font-mono">ID: <b>{viewingStudent.studentId || "N/A"}</b></p>
+                <p className="text-purple-650 text-[10px] mt-0.5 font-mono">ID: <b>{viewingStudent.studentId || "N/A"}</b></p>
               </div>
               <button
                 onClick={() => setViewingStudent(null)}
-                className="text-gray-400 hover:text-white font-bold text-lg cursor-pointer bg-transparent border-0"
+                className="text-slate-400 hover:text-slate-600 font-bold text-lg cursor-pointer bg-transparent border-0"
               >
                 ✕
               </button>
             </div>
 
             <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-              <div className="flex items-center gap-4 border-b border-gray-850 pb-4 mb-4">
+              <div className="flex items-center gap-4 border-b border-slate-200 pb-4 mb-4">
                 {viewingStudent.profileImage ? (
                   <img
                     src={viewingStudent.profileImage}
                     alt="Profile"
-                    className="w-16 h-16 rounded-full object-cover border border-gray-800"
+                    className="w-16 h-16 rounded-full object-cover border border-slate-200"
                   />
                 ) : (
-                  <div className="w-16 h-16 rounded-full bg-purple-950 border border-purple-800 text-purple-400 font-bold flex items-center justify-center text-lg">
+                  <div className="w-16 h-16 rounded-full bg-purple-50 border border-purple-200 text-purple-650 font-bold flex items-center justify-center text-lg shadow-sm">
                     {viewingStudent.firstName?.[0]}{viewingStudent.lastName?.[0]}
                   </div>
                 )}
                 <div>
-                  <h4 className="font-extrabold text-white text-sm">
+                  <h4 className="font-extrabold text-slate-800 text-sm">
                     {viewingStudent.firstName} {viewingStudent.lastName}
                   </h4>
-                  <p className="text-xs text-gray-500">{viewingStudent.email}</p>
+                  <p className="text-xs text-slate-500">{viewingStudent.email}</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4 text-xs">
                 <div>
-                  <span className="text-gray-500 block mb-0.5">Mobile:</span>
-                  <span className="font-semibold text-white">{viewingStudent.mobile || "N/A"}</span>
+                  <span className="text-slate-400 block mb-0.5">Mobile:</span>
+                  <span className="font-semibold text-slate-850">{viewingStudent.mobile || "N/A"}</span>
                 </div>
                 <div>
-                  <span className="text-gray-500 block mb-0.5">WhatsApp:</span>
-                  <span className="font-semibold text-white">{viewingStudent.whatsapp || "N/A"}</span>
+                  <span className="text-slate-400 block mb-0.5">WhatsApp:</span>
+                  <span className="font-semibold text-slate-855">{viewingStudent.whatsapp || "N/A"}</span>
                 </div>
                 <div>
-                  <span className="text-gray-500 block mb-0.5">Other Mobile:</span>
-                  <span className="font-semibold text-white">{viewingStudent.otherMobile || "N/A"}</span>
+                  <span className="text-slate-400 block mb-0.5">Other Mobile:</span>
+                  <span className="font-semibold text-slate-855">{viewingStudent.otherMobile || "N/A"}</span>
                 </div>
                 <div>
-                  <span className="text-gray-500 block mb-0.5">NIC:</span>
-                  <span className="font-semibold text-white">{viewingStudent.nic || "N/A"}</span>
+                  <span className="text-slate-400 block mb-0.5">NIC:</span>
+                  <span className="font-semibold text-slate-855">{viewingStudent.nic || "N/A"}</span>
                 </div>
                 <div>
-                  <span className="text-gray-500 block mb-0.5">Batch:</span>
-                  <span className="font-semibold text-white">{viewingStudent.batch || "N/A"}</span>
+                  <span className="text-slate-400 block mb-0.5">Batch:</span>
+                  <span className="font-semibold text-slate-855">{viewingStudent.batch || "N/A"}</span>
                 </div>
                 <div>
-                  <span className="text-gray-500 block mb-0.5">School:</span>
-                  <span className="font-semibold text-white">{viewingStudent.school || "N/A"}</span>
+                  <span className="text-slate-400 block mb-0.5">School:</span>
+                  <span className="font-semibold text-slate-855">{viewingStudent.school || "N/A"}</span>
                 </div>
                 <div>
-                  <span className="text-gray-500 block mb-0.5">Home City:</span>
-                  <span className="font-semibold text-white">{viewingStudent.homeCity || "N/A"}</span>
+                  <span className="text-slate-400 block mb-0.5">Home City:</span>
+                  <span className="font-semibold text-slate-855">{viewingStudent.homeCity || "N/A"}</span>
                 </div>
                 <div>
-                  <span className="text-gray-500 block mb-0.5">Address:</span>
-                  <span className="font-semibold text-white">{viewingStudent.address || "N/A"}</span>
+                  <span className="text-slate-400 block mb-0.5">Address:</span>
+                  <span className="font-semibold text-slate-855">{viewingStudent.address || "N/A"}</span>
                 </div>
                 <div>
-                  <span className="text-gray-500 block mb-0.5">Gender:</span>
-                  <span className="font-semibold text-white">{viewingStudent.gender || "N/A"}</span>
+                  <span className="text-slate-400 block mb-0.5">Gender:</span>
+                  <span className="font-semibold text-slate-855">{viewingStudent.gender || "N/A"}</span>
                 </div>
                 <div>
-                  <span className="text-gray-500 block mb-0.5">Birthday:</span>
-                  <span className="font-semibold text-white font-mono">{viewingStudent.birthday || "N/A"}</span>
+                  <span className="text-slate-400 block mb-0.5">Birthday:</span>
+                  <span className="font-semibold text-slate-855 font-mono">{viewingStudent.birthday || "N/A"}</span>
                 </div>
               </div>
             </div>
@@ -1414,11 +1476,11 @@ export default function AdminDashboard({ onLogout }) {
             <img
               src={zoomedSlip}
               alt="Zoomed Slip"
-              className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl border border-gray-800"
+              className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl border border-slate-800"
             />
             <button
               onClick={() => setZoomedSlip(null)}
-              className="absolute top-4 right-4 bg-black/60 text-white font-extrabold text-sm w-8 h-8 rounded-full flex items-center justify-center shadow backdrop-blur-sm cursor-pointer"
+              className="absolute top-4 right-4 bg-black/60 text-white font-extrabold text-sm w-8 h-8 rounded-full flex items-center justify-center shadow backdrop-blur-sm cursor-pointer border-0"
             >
               ✕
             </button>
