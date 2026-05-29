@@ -349,6 +349,35 @@ export const verifyStudentProfile = async (uid) => {
 };
 
 /**
+ * Auto-delete tute delivery records where deliveryStatus === "Shipped"
+ * and shippedAt was more than 2 weeks (14 days) ago.
+ */
+export const cleanupShippedTutes = async () => {
+  try {
+    const q = query(
+      collection(db, "payments"),
+      where("deliveryStatus", "==", "Shipped")
+    );
+    const querySnapshot = await getDocs(q);
+    const now = Date.now();
+    const twoWeeksMs = 14 * 24 * 60 * 60 * 1000;
+
+    for (const docSnap of querySnapshot.docs) {
+      const data = docSnap.data();
+      if (data.shippedAt) {
+        const shippedTime = new Date(data.shippedAt).getTime();
+        if (now - shippedTime > twoWeeksMs) {
+          await deleteDoc(doc(db, "payments", docSnap.id));
+          console.log(`Deleted shipped tute (2 weeks old): ${docSnap.id}`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error cleaning up shipped tutes: ", error);
+  }
+};
+
+/**
  * Clean up approved slips that are older than 7 days.
  * Deletes the slipImage field content from Firestore to save storage and ensure privacy.
  */

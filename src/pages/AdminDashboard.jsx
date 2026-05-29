@@ -16,12 +16,28 @@ import {
   updateTuteTracking,
   verifyStudentNIC,
   verifyStudentProfile,
-  cleanupExpiredSlips
+  cleanupExpiredSlips,
+  cleanupShippedTutes
 } from "../db/firestoreService";
 import { Html5Qrcode } from "html5-qrcode";
 
+// ── Hash <-> Tab mapping ─────────────────────────────────────────────
+const TAB_HASHES = {
+  students:           "#students",
+  classes:            "#classes",
+  recordings:         "#recordings",
+  approvals:          "#approvals",
+  tutes:              "#tutes",
+  verification:       "#verification",
+  studentVerification:"#studentVerification",
+};
+const HASH_TO_TAB = Object.fromEntries(
+  Object.entries(TAB_HASHES).map(([k, v]) => [v, k])
+);
+const getTabFromHash = () => HASH_TO_TAB[window.location.hash] || "students";
+
 export default function AdminDashboard({ onLogout }) {
-  const [activeTab, setActiveTab] = useState("students");
+  const [activeTab, setActiveTab] = useState(getTabFromHash);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
   // Data lists
@@ -36,6 +52,16 @@ export default function AdminDashboard({ onLogout }) {
 
   // Search filter for students tab
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Search filters for other tabs
+  const [tuteSearch, setTuteSearch] = useState("");
+  const [svSearch, setSvSearch] = useState("");
+
+  // Tute Delivery filter
+  const [tuteFilter, setTuteFilter] = useState("All"); // All | Pending | Shipped | Delivered
+
+  // Student Verification filter
+  const [svFilter, setSvFilter] = useState("All"); // All | PendingNIC | PendingProfile | Verified | NoDoc
 
   // New Class Form State
   const [classForm, setClassForm] = useState({
@@ -94,9 +120,24 @@ export default function AdminDashboard({ onLogout }) {
     }
   };
 
+  // ── Hash-based routing: sync URL hash → activeTab ────────────────
+  useEffect(() => {
+    const onHashChange = () => {
+      const tab = getTabFromHash();
+      setActiveTab(tab);
+    };
+    window.addEventListener("hashchange", onHashChange);
+    // Set initial hash if missing
+    if (!window.location.hash) {
+      window.history.replaceState(null, "", `#${activeTab}`);
+    }
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
   useEffect(() => {
     fetchData();
     cleanupExpiredSlips();
+    cleanupShippedTutes();
   }, []);
 
   // Sync selected class details when selectedClassId changes
@@ -438,8 +479,53 @@ export default function AdminDashboard({ onLogout }) {
     );
   });
 
-  // Tute Deliveries List
+  // Tute Deliveries List (all)
   const tuteDeliveries = payments.filter(p => p.status === "approved" && p.tuteRequired);
+
+  // Tute Deliveries filtered by tuteFilter and search query (matches ID, name, or looked-up email)
+  const filteredTuteDeliveries = tuteDeliveries.filter(d => {
+    // Status filter first
+    let statusMatch = true;
+    if (tuteFilter === "Pending") statusMatch = !d.deliveryStatus || d.deliveryStatus === "Pending";
+    else if (tuteFilter === "Shipped") statusMatch = d.deliveryStatus === "Shipped";
+    else if (tuteFilter === "Delivered") statusMatch = d.deliveryStatus === "Delivered";
+
+    if (!statusMatch) return false;
+
+    // Search query filter
+    const q = tuteSearch.trim().toLowerCase();
+    if (!q) return true;
+
+    const student = students.find(s => s.id === d.studentUid || s.studentId === d.studentId);
+    const email = student ? (student.email || "").toLowerCase() : "";
+    const studentId = (d.studentId || "").toLowerCase();
+    const studentName = (d.studentName || "").toLowerCase();
+
+    return studentId.includes(q) || email.includes(q) || studentName.includes(q);
+  });
+
+  // Student Verification filtered list (matches ID, email, or name)
+  const filteredSVStudents = students.filter(s => {
+    // Status filter first
+    let statusMatch = true;
+    if (svFilter === "PendingNIC") statusMatch = !s.isNICVerified && s.nicFrontImage;
+    else if (svFilter === "PendingProfile") statusMatch = !s.isProfileVerified && s.profileImage;
+    else if (svFilter === "Verified") statusMatch = s.isNICVerified && s.isProfileVerified;
+    else if (svFilter === "NoDoc") statusMatch = !s.nicFrontImage && !s.profileImage;
+
+    if (!statusMatch) return false;
+
+    // Search query filter
+    const q = svSearch.trim().toLowerCase();
+    if (!q) return true;
+
+    const studentId = (s.studentId || "").toLowerCase();
+    const email = (s.email || "").toLowerCase();
+    const firstName = (s.firstName || "").toLowerCase();
+    const lastName = (s.lastName || "").toLowerCase();
+
+    return studentId.includes(q) || email.includes(q) || firstName.includes(q) || lastName.includes(q);
+  });
 
   // Analytics Stats
   const activeStudentsCount = students.length;
@@ -449,6 +535,8 @@ export default function AdminDashboard({ onLogout }) {
   const pendingTutesCount = tuteDeliveries.filter(d => d.deliveryStatus === "Pending" || !d.deliveryStatus).length;
 
   const handleTabSelect = (tab) => {
+    // Push to history so Back/Forward work
+    window.location.hash = TAB_HASHES[tab];
     setActiveTab(tab);
     setSidebarOpen(false);
   };
@@ -1148,15 +1236,69 @@ export default function AdminDashboard({ onLogout }) {
           {/* ──────────────────────────────────────────────────────── */}
           {activeTab === "tutes" && (
             <div className="space-y-6">
-              <h2 className="text-lg font-extrabold text-slate-900">Tute Delivery Tracking System</h2>
+              {/* Header + Filter Bar */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-extrabold text-slate-900">Tute Delivery Tracking System</h2>
+                  <p className="text-slate-500 text-xs mt-0.5">
+                    Shipped ලෙස සකසා දින 14කින් records ස්වයංක්‍රීයව Delete වේ.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  {/* Search Bar */}
+                  <div className="relative max-w-xs w-full min-w-[200px]">
+                    <input
+                      type="text"
+                      placeholder="Search by ID or Email..."
+                      value={tuteSearch}
+                      onChange={(e) => setTuteSearch(e.target.value)}
+                      className="w-full pl-8 pr-4 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:bg-white transition-all shadow-inner"
+                    />
+                    <span className="absolute left-3 top-2.5 text-slate-400 text-xs">🔍</span>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {["All", "Pending", "Shipped", "Delivered"].map(f => {
+                      const counts = {
+                        All: tuteDeliveries.length,
+                        Pending: tuteDeliveries.filter(d => !d.deliveryStatus || d.deliveryStatus === "Pending").length,
+                        Shipped: tuteDeliveries.filter(d => d.deliveryStatus === "Shipped").length,
+                        Delivered: tuteDeliveries.filter(d => d.deliveryStatus === "Delivered").length,
+                      };
+                      const colors = {
+                        All: tuteFilter === f ? "bg-purple-600 text-white border-purple-700 shadow-md shadow-purple-100" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50",
+                        Pending: tuteFilter === f ? "bg-amber-500 text-white border-amber-600 shadow-md shadow-amber-100" : "bg-white text-amber-700 border-amber-200 hover:bg-amber-50",
+                        Shipped: tuteFilter === f ? "bg-blue-600 text-white border-blue-700 shadow-md shadow-blue-100" : "bg-white text-blue-700 border-blue-200 hover:bg-blue-50",
+                        Delivered: tuteFilter === f ? "bg-green-600 text-white border-green-700 shadow-md shadow-green-100" : "bg-white text-green-700 border-green-200 hover:bg-green-50",
+                      };
+                      return (
+                        <button
+                          key={f}
+                          onClick={() => setTuteFilter(f)}
+                          className={`px-3 py-1.5 rounded-xl border font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${colors[f]}`}
+                        >
+                          {f}
+                          <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${
+                            tuteFilter === f ? "bg-white/25" : "bg-slate-100 text-slate-500"
+                          }`}>
+                            {counts[f]}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
 
               {loadingPayments ? (
                 <div className="flex justify-center p-12">
                   <div className="w-10 h-10 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
                 </div>
-              ) : tuteDeliveries.length === 0 ? (
+              ) : filteredTuteDeliveries.length === 0 ? (
                 <div className="text-center py-12 text-slate-450 text-xs bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
-                  නිබන්ධන තැපැල් කිරීමේ ඉල්ලීම් කිසිවක් දැනට නොමැත.
+                  {tuteFilter === "All"
+                    ? "නිබන්ධන තැපැල් කිරීමේ ඉල්ලීම් කිසිවක් දැනට නොමැත."
+                    : `"${tuteFilter}" status එකේ tute delivery records නොමැත.`}
                 </div>
               ) : (
                 <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
@@ -1173,7 +1315,7 @@ export default function AdminDashboard({ onLogout }) {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 font-medium">
-                        {tuteDeliveries.map((delivery) => (
+                        {filteredTuteDeliveries.map((delivery) => (
                           <tr key={delivery.id} className="hover:bg-slate-50/50 transition-colors">
                             <td className="py-4 px-6">
                               <p className="font-bold text-slate-850">{delivery.studentName}</p>
@@ -1441,18 +1583,81 @@ export default function AdminDashboard({ onLogout }) {
           {/* ──────────────────────────────────────────────────────── */}
           {activeTab === "studentVerification" && (
             <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
-              <div>
-                <h3 className="font-extrabold text-slate-900 text-base">Online Student Account Verification</h3>
-                <p className="text-slate-550 text-xs mt-0.5">ශිෂ්‍යයන් විසින් ඉදිරිපත් කරන ලද profile ඡායාරූප සහ NIC ඡායාරූප පරීක්ෂා කර ගිණුම් සක්‍රීය (verify) කරන්න.</p>
+              {/* Header + Filter Bar */}
+              <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-base">Online Student Account Verification</h3>
+                  <p className="text-slate-550 text-xs mt-0.5">ශිෂ්‍යයන් විසින් ඉදිරිපත් කරන ලද profile ඡායාරූප සහ NIC ඡායාරූප පරීක්ෂා කර ගිණුම් සක්‍රීය (verify) කරන්න.</p>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap shrink-0">
+                  {/* Search Bar */}
+                  <div className="relative max-w-xs w-full min-w-[200px]">
+                    <input
+                      type="text"
+                      placeholder="Search by ID or Email..."
+                      value={svSearch}
+                      onChange={(e) => setSvSearch(e.target.value)}
+                      className="w-full pl-8 pr-4 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 text-slate-805 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:bg-white transition-all shadow-inner"
+                    />
+                    <span className="absolute left-3 top-2.5 text-slate-400 text-xs">🔍</span>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap shrink-0">
+                    {[
+                      { key: "All",            label: "All",             color: "purple" },
+                      { key: "PendingNIC",     label: "Pending NIC",     color: "amber"  },
+                      { key: "PendingProfile", label: "Pending Profile", color: "orange" },
+                      { key: "Verified",       label: "Verified",        color: "green"  },
+                      { key: "NoDoc",          label: "No Docs",         color: "slate"  },
+                    ].map(f => {
+                      const countMap = {
+                        All:            students.length,
+                        PendingNIC:     students.filter(s => !s.isNICVerified && s.nicFrontImage).length,
+                        PendingProfile: students.filter(s => !s.isProfileVerified && s.profileImage).length,
+                        Verified:       students.filter(s => s.isNICVerified && s.isProfileVerified).length,
+                        NoDoc:          students.filter(s => !s.nicFrontImage && !s.profileImage).length,
+                      };
+                      const isActive = svFilter === f.key;
+                      const activeStyles = {
+                        purple: "bg-purple-600 text-white border-purple-700 shadow-md shadow-purple-100",
+                        amber:  "bg-amber-500  text-white border-amber-600  shadow-md shadow-amber-100",
+                        orange: "bg-orange-500 text-white border-orange-600 shadow-md shadow-orange-100",
+                        green:  "bg-green-600  text-white border-green-700  shadow-md shadow-green-100",
+                        slate:  "bg-slate-600  text-white border-slate-700  shadow-md shadow-slate-100",
+                      };
+                      const inactiveStyles = {
+                        purple: "bg-white text-slate-600  border-slate-200 hover:bg-slate-50",
+                        amber:  "bg-white text-amber-700  border-amber-200  hover:bg-amber-50",
+                        orange: "bg-white text-orange-700 border-orange-200 hover:bg-orange-50",
+                        green:  "bg-white text-green-700  border-green-200  hover:bg-green-50",
+                        slate:  "bg-white text-slate-500  border-slate-200  hover:bg-slate-50",
+                      };
+                      return (
+                        <button
+                          key={f.key}
+                          onClick={() => setSvFilter(f.key)}
+                          className={`px-3 py-1.5 rounded-xl border font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${isActive ? activeStyles[f.color] : inactiveStyles[f.color]}`}
+                        >
+                          {f.label}
+                          <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${isActive ? "bg-white/25" : "bg-slate-100 text-slate-500"}`}>
+                            {countMap[f.key]}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
 
               {loadingStudents ? (
                 <div className="flex justify-center p-12">
                   <div className="w-10 h-10 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
                 </div>
-              ) : students.length === 0 ? (
+              ) : filteredSVStudents.length === 0 ? (
                 <div className="text-center py-12 text-slate-400 text-xs bg-slate-50 border border-slate-150 rounded-2xl p-8">
-                  ලියාපදිංචි ශිෂ්‍යයින් කිසිවෙකු සොයාගත නොහැක!
+                  {svFilter === "All"
+                    ? "ලියාපදිංචි ශිෂ්‍යයින් කිසිවෙකු සොයාගත නොහැක!"
+                    : `"${svFilter}" පරිදි ශිෂ්‍යයින් කිසිවෙකු නොමැත.`}
                 </div>
               ) : (
                 <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
@@ -1469,7 +1674,7 @@ export default function AdminDashboard({ onLogout }) {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 font-medium">
-                        {students.map((s) => (
+                        {filteredSVStudents.map((s) => (
                           <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
                             <td className="py-4 px-6 font-bold text-purple-650 font-mono tracking-wider">{s.studentId || "N/A"}</td>
                             <td className="py-4 px-6 font-semibold text-slate-800">{s.firstName} {s.lastName}</td>
