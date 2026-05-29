@@ -13,7 +13,10 @@ import {
   getStudentByStudentId,
   activateClassForStudent,
   deactivateClassForStudent,
-  updateTuteTracking
+  updateTuteTracking,
+  verifyStudentNIC,
+  verifyStudentProfile,
+  cleanupExpiredSlips
 } from "../db/firestoreService";
 import { Html5Qrcode } from "html5-qrcode";
 
@@ -55,6 +58,7 @@ export default function AdminDashboard({ onLogout }) {
   // Modals / Zoom States
   const [viewingStudent, setViewingStudent] = useState(null);
   const [zoomedSlip, setZoomedSlip] = useState(null);
+  const [reviewingVerificationStudent, setReviewingVerificationStudent] = useState(null);
 
   // Tute Delivery Tab states
   const [editingTuteId, setEditingTuteId] = useState(null);
@@ -92,6 +96,7 @@ export default function AdminDashboard({ onLogout }) {
 
   useEffect(() => {
     fetchData();
+    cleanupExpiredSlips();
   }, []);
 
   // Sync selected class details when selectedClassId changes
@@ -324,12 +329,14 @@ export default function AdminDashboard({ onLogout }) {
   // Change Tute Delivery Status
   const handleTuteStatusChange = async (paymentId, status) => {
     try {
-      await updateTuteTracking(paymentId, {
-        deliveryStatus: status,
-        shippedAt: status === "Shipped" ? new Date().toISOString() : undefined,
-        deliveredAt: status === "Delivered" ? new Date().toISOString() : undefined
-      });
-      alert(`තත්ත්වය ${status} ලෙස වෙනස් කරන ලදී.`);
+      const updateData = { deliveryStatus: status };
+      if (status === "Shipped") {
+        updateData.shippedAt = new Date().toISOString();
+      } else if (status === "Delivered") {
+        updateData.deliveredAt = new Date().toISOString();
+      }
+      await updateTuteTracking(paymentId, updateData);
+      alert(`තත්ත්වය ${status} ලෙස සාර්ථකව වෙනස් කරන ලදී.`);
       fetchData();
     } catch (err) {
       alert("තත්ත්වය වෙනස් කිරීම අසාර්ථකයි: " + err.message);
@@ -390,6 +397,32 @@ export default function AdminDashboard({ onLogout }) {
     } catch (e) {
       console.error(e);
       alert("ක්‍රියාවලිය අසාර්ථකයි.");
+    }
+  };
+
+  // Verify Student NIC
+  const handleVerifyStudentNIC = async (studentId) => {
+    try {
+      await verifyStudentNIC(studentId);
+      alert("ශිෂ්‍යයාගේ NIC එක සාර්ථකව verify කරන ලදී! පින්තූර ස්වයංක්‍රීයව මකා දමන ලදි.");
+      fetchData();
+      // Update local modal state if open
+      setReviewingVerificationStudent(prev => prev ? { ...prev, isNICVerified: true, nicFrontImage: "", nicBackImage: "" } : null);
+    } catch (err) {
+      alert("NIC verify කිරීම අසාර්ථකයි: " + err.message);
+    }
+  };
+
+  // Verify Student Profile
+  const handleVerifyStudentProfile = async (studentId) => {
+    try {
+      await verifyStudentProfile(studentId);
+      alert("ශිෂ්‍යයාගේ Profile එක සාර්ථකව verify කරන ලදී!");
+      fetchData();
+      // Update local modal state if open
+      setReviewingVerificationStudent(prev => prev ? { ...prev, isProfileVerified: true } : null);
+    } catch (err) {
+      alert("Profile verify කිරීම අසාර්ථකයි: " + err.message);
     }
   };
 
@@ -516,6 +549,24 @@ export default function AdminDashboard({ onLogout }) {
               <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0a8 8 0 11-16 0 8 8 0 0116 0z" /></svg>
               Student QR Verification
             </button>
+
+            {/* Online Student Verification */}
+            <button
+              onClick={() => handleTabSelect("studentVerification")}
+              className={`w-full py-3 px-4 font-bold text-xs rounded-xl flex items-center justify-between transition-all cursor-pointer ${
+                activeTab === "studentVerification" ? "bg-purple-600 text-white shadow-lg shadow-purple-200" : "text-slate-650 hover:bg-slate-100 hover:text-slate-900"
+              }`}
+            >
+              <span className="flex items-center gap-3">
+                <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                Student Verification
+              </span>
+              {students.filter(s => (!s.isProfileVerified || !s.isNICVerified) && (s.profileImage || s.nicFrontImage)).length > 0 && (
+                <span className="bg-red-650 bg-red-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-sm ml-auto">
+                  {students.filter(s => (!s.isProfileVerified || !s.isNICVerified) && (s.profileImage || s.nicFrontImage)).length}
+                </span>
+              )}
+            </button>
           </nav>
         </div>
 
@@ -560,8 +611,15 @@ export default function AdminDashboard({ onLogout }) {
             <h2 className="font-extrabold text-slate-850 text-base leading-none">SKCHEM.COM — Admin Control Panel</h2>
           </div>
           <div className="flex items-center gap-4">
-            <button onClick={fetchData} className="p-2 text-slate-500 hover:text-slate-700 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors border border-slate-200 shadow-sm cursor-pointer" title="Refresh Database">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89H18" /></svg>
+            <button
+              onClick={fetchData}
+              className="px-3.5 py-2 text-xs font-bold text-purple-700 hover:text-purple-800 bg-purple-50 hover:bg-purple-100 transition-all rounded-xl border border-purple-200 shadow-sm flex items-center gap-1.5 cursor-pointer animate-fade-in"
+              title="Refresh Database (දත්ත යාවත්කාලීන කරන්න)"
+            >
+              <svg className="w-4 h-4 text-purple-600 transition-transform duration-500 hover:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89H18" />
+              </svg>
+              Refresh Data
             </button>
             <span className="px-2.5 py-1 bg-green-50 text-green-700 border border-green-200 rounded-full font-bold text-[10px] tracking-wide shadow-sm flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-green-600 animate-ping" />
@@ -1016,11 +1074,20 @@ export default function AdminDashboard({ onLogout }) {
                           onClick={() => setZoomedSlip(pay.slipImage)}
                           className="h-44 bg-slate-100 flex items-center justify-center overflow-hidden cursor-zoom-in relative border-b border-slate-200"
                         >
-                          <img
-                            src={pay.slipImage}
-                            alt="Slip"
-                            className="h-full w-full object-contain hover:scale-105 transition-transform"
-                          />
+                          {pay.slipImage.startsWith("data:application/pdf;base64,") ? (
+                            <div className="flex flex-col items-center gap-2 text-slate-555 select-none animate-fade-in">
+                              <svg className="w-12 h-12 text-red-600 drop-shadow-sm" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                              <span className="text-[10px] font-extrabold text-slate-700 bg-red-50 border border-red-200 px-2.5 py-0.5 rounded-full uppercase tracking-wider">PDF Document</span>
+                            </div>
+                          ) : (
+                            <img
+                              src={pay.slipImage}
+                              alt="Slip"
+                              className="h-full w-full object-contain hover:scale-105 transition-transform"
+                            />
+                          )}
                           <span className="absolute bottom-3 right-3 bg-black/60 text-white text-[9px] font-bold py-1 px-2 rounded-full backdrop-blur-sm shadow">
                             🔍 Click to zoom
                           </span>
@@ -1368,6 +1435,92 @@ export default function AdminDashboard({ onLogout }) {
               )}
             </div>
           )}
+
+          {/* ──────────────────────────────────────────────────────── */}
+          {/* 6.5. ONLINE STUDENT VERIFICATION TAB                     */}
+          {/* ──────────────────────────────────────────────────────── */}
+          {activeTab === "studentVerification" && (
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-base">Online Student Account Verification</h3>
+                <p className="text-slate-550 text-xs mt-0.5">ශිෂ්‍යයන් විසින් ඉදිරිපත් කරන ලද profile ඡායාරූප සහ NIC ඡායාරූප පරීක්ෂා කර ගිණුම් සක්‍රීය (verify) කරන්න.</p>
+              </div>
+
+              {loadingStudents ? (
+                <div className="flex justify-center p-12">
+                  <div className="w-10 h-10 border-4 border-purple-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : students.length === 0 ? (
+                <div className="text-center py-12 text-slate-400 text-xs bg-slate-50 border border-slate-150 rounded-2xl p-8">
+                  ලියාපදිංචි ශිෂ්‍යයින් කිසිවෙකු සොයාගත නොහැක!
+                </div>
+              ) : (
+                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs text-slate-755 font-sans">
+                      <thead className="bg-slate-50 border-b border-slate-200 font-extrabold text-[10px] uppercase text-slate-500 tracking-wider">
+                        <tr>
+                          <th className="py-4 px-6">Student ID</th>
+                          <th className="py-4 px-6">Name</th>
+                          <th className="py-4 px-6">NIC Number</th>
+                          <th className="py-4 px-6 text-center">NIC Status</th>
+                          <th className="py-4 px-6 text-center">Profile Status</th>
+                          <th className="py-4 px-6 text-center">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-medium">
+                        {students.map((s) => (
+                          <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="py-4 px-6 font-bold text-purple-650 font-mono tracking-wider">{s.studentId || "N/A"}</td>
+                            <td className="py-4 px-6 font-semibold text-slate-800">{s.firstName} {s.lastName}</td>
+                            <td className="py-4 px-6 font-mono text-slate-500">{s.nic || "N/A"}</td>
+                            <td className="py-4 px-6 text-center">
+                              {s.isNICVerified ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-full font-bold text-[9px] uppercase shadow-sm">
+                                  Verified
+                                </span>
+                              ) : s.nicFrontImage ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full font-bold text-[9px] uppercase shadow-sm animate-pulse">
+                                  Pending Review
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-slate-100 text-slate-400 border border-slate-200 rounded-full font-bold text-[9px] uppercase">
+                                  No Document
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-4 px-6 text-center">
+                              {s.isProfileVerified ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-full font-bold text-[9px] uppercase shadow-sm">
+                                  Verified
+                                </span>
+                              ) : s.profileImage ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full font-bold text-[9px] uppercase shadow-sm animate-pulse">
+                                  Pending Review
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-slate-100 text-slate-400 border border-slate-200 rounded-full font-bold text-[9px] uppercase">
+                                  No Photo
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-4 px-6 text-center">
+                              <button
+                                onClick={() => setReviewingVerificationStudent(s)}
+                                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg transition-colors cursor-pointer shadow-sm border-0"
+                              >
+                                Review &amp; Verify
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </main>
 
         {/* Footer */}
@@ -1466,18 +1619,175 @@ export default function AdminDashboard({ onLogout }) {
         </div>
       )}
 
+      {/* ── ONLINE STUDENT VERIFICATION DETAIL REVIEW MODAL ── */}
+      {reviewingVerificationStudent && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 text-slate-800 rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden relative font-sans">
+            <div className="bg-slate-50 text-slate-855 p-6 flex justify-between items-center border-b border-slate-200">
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900">Review Online Student Account</h3>
+                <p className="text-purple-650 text-[10px] mt-0.5 font-mono">ID: <b>{reviewingVerificationStudent.studentId || "N/A"}</b></p>
+              </div>
+              <button
+                onClick={() => setReviewingVerificationStudent(null)}
+                className="text-slate-400 hover:text-slate-655 font-bold text-lg cursor-pointer bg-transparent border-0"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+              {/* Profile details */}
+              <div className="grid grid-cols-2 gap-4 text-xs border-b border-slate-200 pb-4">
+                <div>
+                  <span className="text-slate-400 block mb-0.5">Name:</span>
+                  <span className="font-semibold text-slate-850">{reviewingVerificationStudent.firstName} {reviewingVerificationStudent.lastName}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block mb-0.5">Email:</span>
+                  <span className="font-semibold text-slate-850">{reviewingVerificationStudent.email}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block mb-0.5">Mobile:</span>
+                  <span className="font-semibold text-slate-855 font-mono">{reviewingVerificationStudent.mobile || "N/A"}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block mb-0.5">WhatsApp:</span>
+                  <span className="font-semibold text-slate-855 font-mono">{reviewingVerificationStudent.whatsapp || "N/A"}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block mb-0.5">NIC Number:</span>
+                  <span className="font-semibold text-slate-855 font-mono">{reviewingVerificationStudent.nic || "N/A"}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block mb-0.5">Batch:</span>
+                  <span className="font-semibold text-slate-855">{reviewingVerificationStudent.batch || "N/A"}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block mb-0.5">School:</span>
+                  <span className="font-semibold text-slate-855">{reviewingVerificationStudent.school || "N/A"}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block mb-0.5">Home Address:</span>
+                  <span className="font-semibold text-slate-855">{reviewingVerificationStudent.address || "N/A"}</span>
+                </div>
+              </div>
+
+              {/* Photos verification section */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Profile photo */}
+                <div className="border border-slate-200 rounded-xl p-4 flex flex-col items-center justify-between gap-3 bg-slate-50/50">
+                  <div className="text-center">
+                    <p className="font-bold text-xs text-slate-800 mb-2">Profile Photo</p>
+                    {reviewingVerificationStudent.profileImage ? (
+                      <img
+                        src={reviewingVerificationStudent.profileImage}
+                        alt="Profile"
+                        className="w-32 h-32 rounded-xl object-cover border border-slate-200 mx-auto shadow-sm"
+                      />
+                    ) : (
+                      <div className="w-32 h-32 rounded-xl bg-slate-200 flex items-center justify-center text-slate-400 text-xs font-semibold mx-auto border border-slate-200">
+                        Not Uploaded
+                      </div>
+                    )}
+                  </div>
+                  {reviewingVerificationStudent.isProfileVerified ? (
+                    <span className="px-3 py-1 bg-green-50 text-green-700 border border-green-200 rounded-full font-bold text-[10px] uppercase">
+                      ✓ Profile Verified
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => handleVerifyStudentProfile(reviewingVerificationStudent.id)}
+                      disabled={!reviewingVerificationStudent.profileImage}
+                      className="w-full py-2 bg-green-600 hover:bg-green-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-lg text-xs shadow-sm cursor-pointer border-0"
+                    >
+                      Verify Profile
+                    </button>
+                  )}
+                </div>
+
+                {/* NIC photos */}
+                <div className="border border-slate-200 rounded-xl p-4 flex flex-col items-center justify-between gap-3 bg-slate-50/50">
+                  <div className="text-center w-full">
+                    <p className="font-bold text-xs text-slate-800 mb-2">National ID (NIC)</p>
+                    {reviewingVerificationStudent.isNICVerified ? (
+                      <div className="py-8 bg-green-50/50 border border-green-200 rounded-xl text-green-700 font-semibold text-xs space-y-1">
+                        <p>✓ NIC verified successfully.</p>
+                        <p className="text-[10px] text-slate-400 font-normal">NIC Images have been deleted.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <p className="text-[9px] text-slate-400 font-bold uppercase mb-1">Front</p>
+                            {reviewingVerificationStudent.nicFrontImage ? (
+                              <img
+                                src={reviewingVerificationStudent.nicFrontImage}
+                                alt="NIC Front"
+                                onClick={() => setZoomedSlip(reviewingVerificationStudent.nicFrontImage)}
+                                className="h-20 w-full object-cover rounded-lg border bg-white shadow-sm cursor-zoom-in"
+                              />
+                            ) : (
+                              <div className="h-20 bg-slate-200 rounded-lg flex items-center justify-center text-slate-400 text-[10px]">No Front</div>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-[9px] text-slate-400 font-bold uppercase mb-1">Back</p>
+                            {reviewingVerificationStudent.nicBackImage ? (
+                              <img
+                                src={reviewingVerificationStudent.nicBackImage}
+                                alt="NIC Back"
+                                onClick={() => setZoomedSlip(reviewingVerificationStudent.nicBackImage)}
+                                className="h-20 w-full object-cover rounded-lg border bg-white shadow-sm cursor-zoom-in"
+                              />
+                            ) : (
+                              <div className="h-20 bg-slate-200 rounded-lg flex items-center justify-center text-slate-400 text-[10px]">No Back</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {reviewingVerificationStudent.isNICVerified ? (
+                    <span className="px-3 py-1 bg-green-50 text-green-700 border border-green-200 rounded-full font-bold text-[10px] uppercase">
+                      ✓ NIC Verified
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => handleVerifyStudentNIC(reviewingVerificationStudent.id)}
+                      disabled={!reviewingVerificationStudent.nicFrontImage || !reviewingVerificationStudent.nicBackImage}
+                      className="w-full py-2 bg-green-600 hover:bg-green-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-lg text-xs shadow-sm cursor-pointer border-0"
+                    >
+                      Verify NIC
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── ZOOMED SLIP IMAGE VIEW MODAL ── */}
       {zoomedSlip && (
         <div
           onClick={() => setZoomedSlip(null)}
           className="fixed inset-0 bg-black/95 z-55 flex items-center justify-center p-4 cursor-zoom-out"
         >
-          <div className="relative max-w-4xl max-h-[90vh]">
-            <img
-              src={zoomedSlip}
-              alt="Zoomed Slip"
-              className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl border border-slate-800"
-            />
+          <div className="relative max-w-4xl max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            {zoomedSlip.startsWith("data:application/pdf;base64,") ? (
+              <iframe
+                src={zoomedSlip}
+                title="Slip PDF"
+                className="w-[85vw] h-[85vh] rounded-xl shadow-2xl border bg-white"
+              />
+            ) : (
+              <img
+                src={zoomedSlip}
+                alt="Zoomed Slip"
+                className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl border border-slate-800"
+              />
+            )}
             <button
               onClick={() => setZoomedSlip(null)}
               className="absolute top-4 right-4 bg-black/60 text-white font-extrabold text-sm w-8 h-8 rounded-full flex items-center justify-center shadow backdrop-blur-sm cursor-pointer border-0"

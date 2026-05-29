@@ -312,3 +312,65 @@ export const getAdminProfile = async (uid) => {
     throw error;
   }
 };
+
+/**
+ * Verify a student's National ID Card (NIC).
+ * Immediately deletes the nicFrontImage and nicBackImage fields to preserve storage and privacy.
+ */
+export const verifyStudentNIC = async (uid) => {
+  try {
+    const studentDocRef = doc(db, "students", uid);
+    await updateDoc(studentDocRef, {
+      isNICVerified: true,
+      nicFrontImage: "",
+      nicBackImage: ""
+    });
+    return { success: true };
+  } catch (error) {
+    console.error("Error verifying student NIC: ", error);
+    throw error;
+  }
+};
+
+/**
+ * Verify a student's Profile (photo and details).
+ */
+export const verifyStudentProfile = async (uid) => {
+  try {
+    const studentDocRef = doc(db, "students", uid);
+    await updateDoc(studentDocRef, {
+      isProfileVerified: true
+    });
+    return { success: true };
+  } catch (error) {
+    console.error("Error verifying student profile: ", error);
+    throw error;
+  }
+};
+
+/**
+ * Clean up approved slips that are older than 7 days.
+ * Deletes the slipImage field content from Firestore to save storage and ensure privacy.
+ */
+export const cleanupExpiredSlips = async () => {
+  try {
+    const q = query(collection(db, "payments"), where("status", "==", "approved"));
+    const querySnapshot = await getDocs(q);
+    const now = Date.now();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    
+    for (const docSnap of querySnapshot.docs) {
+      const data = docSnap.data();
+      if (data.slipImage && data.approvedAt) {
+        const approvedTime = new Date(data.approvedAt).getTime();
+        if (now - approvedTime > sevenDaysMs) {
+          await updateDoc(doc(db, "payments", docSnap.id), {
+            slipImage: ""
+          });
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error cleaning up expired slips: ", error);
+  }
+};
